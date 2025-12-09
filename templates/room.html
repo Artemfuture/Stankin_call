@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Комната {{ room_id }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div id="header">
+        <h1>Комната: <span id="roomId" onclick="copyRoomId()">{{ room_id }}</span></h1>
+    </div>
+
+    <div id="main-container">
+        <!-- Контейнер для видео-сетки -->
+        <div id="videos-grid">
+            <video id="local-video" autoplay muted class="video-item"></video>
+            <div id="remote-videos"></div>
+        </div>
+
+        <!-- Правая панель: чат -->
+        <div id="chat-panel">
+            <div id="chat">
+                <div id="messages"></div>
+                <input type="text" id="message-input" placeholder="Введите сообщение...">
+                <button id="send-btn">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Нижняя панель: кнопки и список участников -->
+    <div id="bottom-panel">
+        <div id="controls">
+            <button id="start-btn">Начать трансляцию</button>
+            <button id="screen-btn" disabled>Демонстрация экрана</button>
+            <button id="toggle-audio-btn" disabled>Выключить микрофон</button>
+            <button id="toggle-video-btn" disabled>Выключить камеру</button>
+        </div>
+
+        <!-- Список участников -->
+        <div id="participants">
+            <h3>Участники:</h3>
+            <ul id="user-list"></ul>
+        </div>
+    </div>
+
+    <!-- Модальное окно проверки присутствия -->
+    <div id="presenceModal" class="modal">
+        <div class="modal-content">
+            <h3>Вы всё ещё здесь?</h3>
+            <p>Пожалуйста, подтвердите, что вы присутствуете на конференции.</p>
+            <button id="confirmPresence">Я здесь!</button>
+        </div>
+    </div>
+
+    <!-- Подключение Socket.IO и основного скрипта -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

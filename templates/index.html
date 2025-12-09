@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Видеоконференция</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Видеоконференция на основе WebRTC</h1>
+    <form action="/create_room" method="POST">
+        <button type="submit">Создать комнату</button>
+    </form>
+
+    <div style="margin-top: 30px;">
+        <h2>Или войти в существующую комнату</h2>
+        <input type="text" id="roomIdInput" placeholder="Введите ID комнаты">
+        <button onclick="joinExistingRoom()">Войти в комнату</button>
+    </div>
+
+    <script>
+        function joinExistingRoom() {
+            const roomId = document.getElementById('roomIdInput').value.trim();
+            if (roomId) {
+                window.location.href = `/join_form/${roomId}`;
+            } else {
+                alert('Пожалуйста, введите ID комнаты');
+            }
+        }
+    </script>
+</body>
+</html>

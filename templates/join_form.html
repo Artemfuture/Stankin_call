@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Регистрация</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Заголовок формы -->
+    <h1>Добро пожаловать! Пожалуйста, введите ваше ФИО</h1>
+
+    <!-- Форма ввода ФИО -->
+    <form id="joinForm">
+        <input type="text" id="fullName" placeholder="Фамилия Имя Отчество" required>
+        <input type="hidden" id="roomId" value="{{ room_id }}">
+        <button type="submit">Войти в комнату</button>
+    </form>
+
+    <script>
+        // Обработка отправки формы
+        document.getElementById('joinForm').onsubmit = function(e) {
+            e.preventDefault(); // Предотвращаем стандартное поведение формы
+            const fullName = document.getElementById('fullName').value.trim(); // Получаем введённое ФИО
+            const roomId = document.getElementById('roomId').value; // Получаем ID комнаты
+
+            if (fullName) {
+                // Перенаправляем пользователя в комнату с его ФИО в URL
+                window.location.href = `/room/${roomId}?username=${encodeURIComponent(fullName)}`;
+            }
+        };
+    </script>
+</body>
+</html>

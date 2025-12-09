@@ -183,18 +183,27 @@ function copyRoomId() {
         alert('ID комнаты скопирован: ' + roomIdText);
     });
 }
-
-// --- Начало/завершение трансляции ---
 startBtn.onclick = async () => {
     if (!isStreaming) {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
-        startBtn.textContent = 'Завершить трансляцию';
-        isStreaming = true;
-        startBtn.disabled = false;
-        screenBtn.disabled = false;
-        toggleAudioBtn.disabled = false;
-        toggleVideoBtn.disabled = false;
+        try {
+            // Проверяем, есть ли доступ к медиаустройствам
+            if (location.protocol !== 'https:' && !location.hostname.match(/^(localhost|127\.0\.0\.1)$/)) {
+                alert('Доступ к камере требует HTTPS соединение');
+                return;
+            }
+            
+            localStream = await navigator.mediaDevices.getUserMedia({ 
+                video: true, 
+                audio: true 
+            });
+            localVideo.srcObject = localStream;
+            startBtn.textContent = 'Завершить трансляцию';
+            isStreaming = true;
+            // ... остальной код
+        } catch (error) {
+            console.error('Ошибка доступа к медиаустройствам:', error);
+            alert('Не удалось получить доступ к камере/микрофону: ' + error.message);
+        }
     } else {
         // Завершаем трансляцию
         localStream.getTracks().forEach(track => track.stop());
@@ -290,6 +299,7 @@ socket.on('candidate', async (data) => {
 
 // --- Демонстрация экрана ---
 screenBtn.onclick = async () => {
+    console.log('Кнопка начала трансляции нажата');
     try {
         if (!isScreenShared) {
             // Начинаем демонстрацию экрана
@@ -346,6 +356,7 @@ screenBtn.onclick = async () => {
 };
 
 toggleAudioBtn.onclick = () => {
+    console.log('Кнопка аудио нажата');
     audioEnabled = !audioEnabled;
     localStream.getAudioTracks()[0].enabled = audioEnabled;
     toggleAudioBtn.textContent = audioEnabled ? 'Выключить микрофон' : 'Включить микрофон';
@@ -355,6 +366,7 @@ toggleAudioBtn.onclick = () => {
 };
 
 toggleVideoBtn.onclick = () => {
+    console.log('Кнопка video нажата');
     videoEnabled = !videoEnabled;
     localStream.getVideoTracks()[0].enabled = videoEnabled;
     toggleVideoBtn.textContent = videoEnabled ? 'Выключить камеру' : 'Включить камеру';

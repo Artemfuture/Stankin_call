@@ -8,11 +8,11 @@ logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = secrets.token_hex(32)
 socketio = SocketIO(
-    app, 
+    app,
     cors_allowed_origins="*",  # Временно для тестирования
     # или укажите конкретный домен: cors_allowed_origins=["http://ваш-сервер.com"]
     logger=True,
-    engineio_logger=True
+    engineio_logger=True,
 )
 
 # Хранение информации о комнатах в памяти (в реальных приложениях используй базу данных)

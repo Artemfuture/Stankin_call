@@ -39,25 +39,19 @@ socket.on('user_joined', (data) => {
         addMessageToChat(msg.username, msg.message);
     });
 
-    // Создаём соединения с новыми участниками
+    // Создаём соединения с участниками, которые уже в комнате
     data.users.forEach(user => {
         if (user.username !== username && !peerConnections[user.username]) {
             createPeerConnection(user.username);
         }
     });
 
-    // Отправляем offer всем, кто уже был в комнате
+    // Если у нас уже есть локальный поток, отправляем offer всем новым участникам
     if (localStream) {
-        data.users.forEach(user => {
-            if (user.username !== username) {
-                createOffer(user.username);
-            }
-        });
-    }
-
-    // Отправляем offer новому участнику от всех, у кого есть поток
-    if (localStream) {
-        createOffer(data.username);
+        if (data.username && data.username !== username) {
+            // Это другой участник вошёл, отправляем ему offer
+            createOffer(data.username);
+        }
     }
 });
 
@@ -241,27 +235,36 @@ function createOffer(targetUser) {
     pc.createOffer()
         .then(offer => {
             pc.setLocalDescription(offer);
-            socket.emit('offer', { offer, room: roomID, sender: username, target: targetUser });
-        });
+            socket.emit('offer', { 
+                offer: offer, 
+                room: roomID, 
+                username: username  // Отправляем свое имя
+            });
+        })
+        .catch(e => console.error('Ошибка создания offer:', e));
 }
-
 // При получении offer от другого участника
 socket.on('offer', async (data) => {
-    const targetUser = data.sender;
-    if (!peerConnections[targetUser]) {
-        createPeerConnection(targetUser);
+    const senderUser = data.sender;  // Теперь правильно получаем отправителя
+    if (!peerConnections[senderUser]) {
+        createPeerConnection(senderUser);
     }
-    const pc = peerConnections[targetUser];
+    const pc = peerConnections[senderUser];
     await pc.setRemoteDescription(data.offer);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    socket.emit('answer', { answer, room: roomID, sender: username, target: targetUser });
+    socket.emit('answer', { 
+        answer: answer, 
+        room: roomID, 
+        username: username,  // Отправляем свое имя
+        sender: username     // Для совместимости
+    });
 });
 
 // При получении answer
 socket.on('answer', async (data) => {
-    const targetUser = data.sender;
-    const pc = peerConnections[targetUser];
+    const senderUser = data.sender;  // Имя отправителя ответа
+    const pc = peerConnections[senderUser];
     if (pc) {
         await pc.setRemoteDescription(data.answer);
     }
@@ -269,9 +272,9 @@ socket.on('answer', async (data) => {
 
 // При получении ICE-кандидата
 socket.on('candidate', async (data) => {
-    const targetUser = data.sender;
-    const pc = peerConnections[targetUser];
-    if (pc) {
+    const senderUser = data.sender;  // Имя отправителя кандидата
+    const pc = peerConnections[senderUser];
+    if (pc && data.candidate) {
         try {
             await pc.addIceCandidate(data.candidate);
         } catch (e) {

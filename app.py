@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import secrets
+import logging
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "your-secret-key"
@@ -130,26 +132,48 @@ def handle_message(data):
 @socketio.on("offer")
 def handle_offer(data):
     """
-    Пересылает SDP offer от одного участника другим.
+    Пересылает SDP offer от одного участника всем другим.
     """
-    emit("offer", data, room=data["room"], skip_sid=request.sid)
+    app.logger.info(f"Offer received from {request.sid} in room {data['room']}")
+    room = data["room"]
+    sender_username = data.get("username")  # Получаем имя отправителя
+    
+    # Отправляем offer всем участникам комнаты, кроме отправителя
+    emit("offer", {
+        "offer": data["offer"],
+        "sender": sender_username,  # Добавляем имя отправителя
+        "room": room
+    }, room=room, skip_sid=request.sid)
 
 
 @socketio.on("answer")
 def handle_answer(data):
     """
-    Пересылает SDP answer от одного участника другим.
+    Пересылает SDP answer от одного участника отправителю offer.
     """
-    emit("answer", data, room=data["room"], skip_sid=request.sid)
+    room = data["room"]
+    sender_username = data.get("username")
+    
+    emit("answer", {
+        "answer": data["answer"],
+        "sender": sender_username,
+        "room": room
+    }, room=room, skip_sid=request.sid)
 
 
 @socketio.on("candidate")
 def handle_candidate(data):
     """
-    Пересылает ICE-кандидат от одного участника другим.
+    Пересылает ICE-кандидат от одного участника всем другим.
     """
-    emit("candidate", data, room=data["room"], skip_sid=request.sid)
-
+    room = data["room"]
+    sender_username = data.get("username")
+    
+    emit("candidate", {
+        "candidate": data["candidate"],
+        "sender": sender_username,
+        "room": room
+    }, room=room, skip_sid=request.sid)
 
 @socketio.on("toggle_track")
 def handle_toggle_track(data):

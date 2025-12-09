@@ -227,4 +227,4 @@ def on_leave(data):
 if __name__ == '__main__':
     # Запуск сервера на 0.0.0.0 для доступа с других устройств
     context = ('cert.pem', 'key.pem')
-    socketio.run(app, host='localhost', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)

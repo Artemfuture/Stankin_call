@@ -9,7 +9,7 @@ let peerConnections = {}; // { username: RTCPeerConnection }
 let isScreenShared = false;
 let audioEnabled = true;
 let videoEnabled = true;
-let isStreaming = false; // Для отслеживания состояния трансляции
+let isStreaming = false;
 const config = { 
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -34,7 +34,6 @@ socket.emit('join', { room: roomID, username: username });
 
 // Обновление списка участников
 socket.on('user_joined', (data) => {
-    // Проверяем, является ли текущий пользователь модератором
     isModerator = data.users.some(u => u.username === username && u.is_moderator);
     updateParticipantList(data.users);
 
@@ -44,29 +43,40 @@ socket.on('user_joined', (data) => {
         addMessageToChat(msg.username, msg.message);
     });
 
-    // Создаём соединения с участниками, которые уже в комнате
+    // Создаём соединения с новыми участниками
     data.users.forEach(user => {
         if (user.username !== username && !peerConnections[user.username]) {
             createPeerConnection(user.username);
         }
     });
 
-    // Если у нас уже есть локальный поток, отправляем offer всем новым участникам
+    // Отправляем offer новому участнику от всех, у кого есть поток
     if (localStream) {
-        if (data.username && data.username !== username) {
-            // Это другой участник вошёл, отправляем ему offer
-            createOffer(data.username);
-        }
+        createOffer(data.username);
+    }
+
+    // Отправляем offer всем, кто уже был в комнате
+    if (localStream) {
+        data.users.forEach(user => {
+            if (user.username !== username) {
+                createOffer(user.username);
+            }
+        });
     }
 });
 
 socket.on('user_left', (data) => {
+    // Закрываем соединение
     if (peerConnections[data.username]) {
         peerConnections[data.username].close();
         delete peerConnections[data.username];
     }
+    // Удаляем видео
     const video = document.getElementById(`video-${data.username}`);
-    if (video) video.remove();
+    if (video) {
+        video.srcObject = null; // Освобождаем ресурсы
+        video.remove();
+    }
     // Обновляем список участников
     updateParticipantList(data.users);
 });
@@ -86,23 +96,19 @@ socket.on('stop_screen_share', (data) => {
         isScreenShared = false;
         for (const user in peerConnections) {
             const sender = peerConnections[user].getSenders().find(s => s.track.kind === 'video');
-            sender.replaceTrack(localStream.getVideoTracks()[0]);
+            if (sender) sender.replaceTrack(localStream.getVideoTracks()[0]);
         }
     }
 });
 
 socket.on('screen_share_started', (data) => {
     const video = document.getElementById(`video-${data.username}`);
-    if (video) {
-        video.classList.add('screen-shared');
-    }
+    if (video) video.classList.add('screen-shared');
 });
 
 socket.on('screen_share_stopped', (data) => {
     const video = document.getElementById(`video-${data.username}`);
-    if (video) {
-        video.classList.remove('screen-shared');
-    }
+    if (video) video.classList.remove('screen-shared');
 });
 
 function updateParticipantList(users) {
@@ -120,7 +126,6 @@ function updateParticipantList(users) {
             kickBtn.textContent = 'Выгнать';
             kickBtn.onclick = () => {
                 socket.emit('kick_user', { room: roomID, moderator: username, target: user.username });
-                // Удаляем участника из списка сразу на клиенте
                 li.remove();
             };
 
@@ -176,41 +181,31 @@ function resetPresenceTimer() {
 document.getElementById('confirmPresence').addEventListener('click', resetPresenceTimer);
 resetPresenceTimer();
 
-// Функция для копирования ID комнаты
 function copyRoomId() {
     const roomIdText = document.getElementById('roomId').textContent;
     navigator.clipboard.writeText(roomIdText).then(() => {
         alert('ID комнаты скопирован: ' + roomIdText);
     });
 }
+
+// --- Начало/завершение трансляции ---
 startBtn.onclick = async () => {
     if (!isStreaming) {
-        try {
-            // Проверяем, есть ли доступ к медиаустройствам
-            if (location.protocol !== 'https:' && !location.hostname.match(/^(localhost|127\.0\.0\.1)$/)) {
-                alert('Доступ к камере требует HTTPS соединение');
-                return;
-            }
-            
-            localStream = await navigator.mediaDevices.getUserMedia({ 
-                video: true, 
-                audio: true 
-            });
-            localVideo.srcObject = localStream;
-            startBtn.textContent = 'Завершить трансляцию';
-            isStreaming = true;
-            // ... остальной код
-        } catch (error) {
-            console.error('Ошибка доступа к медиаустройствам:', error);
-            alert('Не удалось получить доступ к камере/микрофону: ' + error.message);
-        }
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        startBtn.textContent = 'Завершить трансляцию';
+        isStreaming = true;
+        screenBtn.disabled = false;
+        toggleAudioBtn.disabled = false;
+        toggleVideoBtn.disabled = false;
     } else {
         // Завершаем трансляцию
-        localStream.getTracks().forEach(track => track.stop());
-        localVideo.srcObject = null;
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localVideo.srcObject = null;
+        }
         startBtn.textContent = 'Начать трансляцию';
         isStreaming = false;
-        startBtn.disabled = false;
         screenBtn.disabled = true;
         toggleAudioBtn.disabled = true;
         toggleVideoBtn.disabled = true;
@@ -226,6 +221,10 @@ function createPeerConnection(targetUser) {
         }
     };
     pc.ontrack = (event) => {
+        // Проверяем, есть ли уже видео для этого пользователя
+        const existingVideo = document.getElementById(`video-${targetUser}`);
+        if (existingVideo) return;
+
         const video = document.createElement('video');
         video.id = `video-${targetUser}`;
         video.srcObject = event.streams[0];
@@ -249,46 +248,34 @@ function createOffer(targetUser) {
     pc.createOffer()
         .then(offer => {
             pc.setLocalDescription(offer);
-            socket.emit('offer', { 
-                offer: offer, 
-                room: roomID, 
-                username: username  // Отправляем свое имя
-            });
-        })
-        .catch(e => console.error('Ошибка создания offer:', e));
+            socket.emit('offer', { offer, room: roomID, sender: username, target: targetUser });
+        });
 }
-// При получении offer от другого участника
+
 socket.on('offer', async (data) => {
-    const senderUser = data.sender;  // Теперь правильно получаем отправителя
-    if (!peerConnections[senderUser]) {
-        createPeerConnection(senderUser);
+    const targetUser = data.sender;
+    if (!peerConnections[targetUser]) {
+        createPeerConnection(targetUser);
     }
-    const pc = peerConnections[senderUser];
+    const pc = peerConnections[targetUser];
     await pc.setRemoteDescription(data.offer);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    socket.emit('answer', { 
-        answer: answer, 
-        room: roomID, 
-        username: username,  // Отправляем свое имя
-        sender: username     // Для совместимости
-    });
+    socket.emit('answer', { answer, room: roomID, sender: username, target: targetUser });
 });
 
-// При получении answer
 socket.on('answer', async (data) => {
-    const senderUser = data.sender;  // Имя отправителя ответа
-    const pc = peerConnections[senderUser];
+    const targetUser = data.sender;
+    const pc = peerConnections[targetUser];
     if (pc) {
         await pc.setRemoteDescription(data.answer);
     }
 });
 
-// При получении ICE-кандидата
 socket.on('candidate', async (data) => {
-    const senderUser = data.sender;  // Имя отправителя кандидата
-    const pc = peerConnections[senderUser];
-    if (pc && data.candidate) {
+    const targetUser = data.sender;
+    const pc = peerConnections[targetUser];
+    if (pc) {
         try {
             await pc.addIceCandidate(data.candidate);
         } catch (e) {
@@ -297,57 +284,44 @@ socket.on('candidate', async (data) => {
     }
 });
 
-// --- Демонстрация экрана ---
 screenBtn.onclick = async () => {
-    console.log('Кнопка начала трансляции нажата');
     try {
         if (!isScreenShared) {
-            // Начинаем демонстрацию экрана
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             localVideo.srcObject = screenStream;
             screenBtn.textContent = 'Приостановить демонстрацию';
             localVideo.classList.add('screen-shared');
 
-            // Заменяем видеопоток в WebRTC-соединениях
             for (const user in peerConnections) {
                 const sender = peerConnections[user].getSenders().find(s => s.track.kind === 'video');
-                sender.replaceTrack(screenStream.getVideoTracks()[0]);
+                if (sender) sender.replaceTrack(screenStream.getVideoTracks()[0]);
             }
 
-            // Отправляем событие о начале демонстрации
             socket.emit('screen_share_started', { room: roomID, username: username });
 
-            // Когда пользователь останавливает демонстрацию вручную
             screenStream.getVideoTracks()[0].onended = () => {
                 localVideo.srcObject = localStream;
                 screenBtn.textContent = 'Демонстрация экрана';
                 localVideo.classList.remove('screen-shared');
                 isScreenShared = false;
-
-                // Отправляем событие об остановке демонстрации
                 socket.emit('screen_share_stopped', { room: roomID, username: username });
 
-                // Возвращаем камеру в соединения
                 for (const user in peerConnections) {
                     const sender = peerConnections[user].getSenders().find(s => s.track.kind === 'video');
-                    sender.replaceTrack(localStream.getVideoTracks()[0]);
+                    if (sender) sender.replaceTrack(localStream.getVideoTracks()[0]);
                 }
             };
             isScreenShared = true;
         } else {
-            // Останавливаем демонстрацию экрана
             localVideo.srcObject = localStream;
             screenBtn.textContent = 'Демонстрация экрана';
             localVideo.classList.remove('screen-shared');
             isScreenShared = false;
-
-            // Отправляем событие об остановке демонстрации
             socket.emit('screen_share_stopped', { room: roomID, username: username });
 
-            // Возвращаем камеру в соединения
             for (const user in peerConnections) {
                 const sender = peerConnections[user].getSenders().find(s => s.track.kind === 'video');
-                sender.replaceTrack(localStream.getVideoTracks()[0]);
+                if (sender) sender.replaceTrack(localStream.getVideoTracks()[0]);
             }
         }
     } catch (e) {
@@ -356,78 +330,57 @@ screenBtn.onclick = async () => {
 };
 
 toggleAudioBtn.onclick = () => {
-    console.log('Кнопка аудио нажата');
     audioEnabled = !audioEnabled;
-    localStream.getAudioTracks()[0].enabled = audioEnabled;
+    if (localStream) {
+        localStream.getAudioTracks()[0].enabled = audioEnabled;
+    }
     toggleAudioBtn.textContent = audioEnabled ? 'Выключить микрофон' : 'Включить микрофон';
-
-    // Отправляем команду на сервер, чтобы другие знали
     socket.emit('toggle_track', { room: roomID, target: username, type: 'audio', enabled: audioEnabled });
 };
 
 toggleVideoBtn.onclick = () => {
-    console.log('Кнопка video нажата');
     videoEnabled = !videoEnabled;
-    localStream.getVideoTracks()[0].enabled = videoEnabled;
+    if (localStream) {
+        localStream.getVideoTracks()[0].enabled = videoEnabled;
+    }
     toggleVideoBtn.textContent = videoEnabled ? 'Выключить камеру' : 'Включить камеру';
-
-    // Отправляем команду на сервер
     socket.emit('toggle_track', { room: roomID, target: username, type: 'video', enabled: videoEnabled });
 };
 
-// --- Обработка изменения аудио/видео у других участников ---
 socket.on('toggle_track', (data) => {
-    // В реальных приложениях можно скрывать/показывать видео или добавлять индикаторы
     console.log(`${data.target} ${data.enabled ? 'включил' : 'выключил'} ${data.type}`);
 });
 
-// --- Чат ---
 sendBtn.onclick = () => {
     const msg = messageInput.value;
     if (msg.trim()) {
-        // Отправляем сообщение в комнату
         socket.emit('message', { room: roomID, username, message: msg });
-        addMessageToChat(username, msg); // Добавляем своё сообщение в чат
-        messageInput.value = ''; // Очищаем поле
+        addMessageToChat(username, msg);
+        messageInput.value = '';
     }
 };
 
-// Обработка получения сообщения
+// --- Оптимизация чата ---
+const MAX_CHAT_MESSAGES = 100; // Ограничиваем количество сообщений
+
 socket.on('message', (data) => {
     addMessageToChat(data.username, data.message);
 });
 
-// Функция добавления сообщения в чат и сохранение в localStorage
 function addMessageToChat(username, message) {
     const p = document.createElement('p');
     p.innerHTML = `<b>${username}:</b> ${message}`;
     messagesDiv.appendChild(p);
 
-    // Прокручиваем чат вниз
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    // Если сообщений > MAX_CHAT_MESSAGES, удаляем старые
+    while (messagesDiv.children.length > MAX_CHAT_MESSAGES) {
+        messagesDiv.removeChild(messagesDiv.firstChild);
+    }
 
-    // Сохраняем сообщение в localStorage
-    const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-    chatHistory.push({ username, message });
-    localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// При загрузке страницы восстанавливаем чат из localStorage
+// Убираем localStorage для чата — он теперь на сервере
 window.onload = () => {
-    try {
-        // Проверяем, есть ли доступ к localStorage
-        const test = localStorage.getItem('test');
-        const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-        chatHistory.forEach(msg => {
-            addMessageToChat(msg.username, msg.message);
-        });
-    } catch (e) {
-        console.warn('localStorage недоступен или поврежден:', e);
-        // Просто используем только чат из комнаты
-    }
-};
-
-// Очищаем localStorage при уходе со страницы (по желанию)
-window.onbeforeunload = () => {
-    // Оставим чат в localStorage
+    // Не восстанавливаем чат из localStorage
 };

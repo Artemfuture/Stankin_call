@@ -2,7 +2,7 @@
 const urlParams = new URLSearchParams(window.location.search);
 const username = urlParams.get('username') || 'Аноним';
 const roomID = document.getElementById('roomId').textContent;
-const socket = io('http://localhost:5000');
+const socket = io('http://5.228.149.114:5000');
 
 let localStream;
 let peerConnections = {}; // { username: RTCPeerConnection }
@@ -10,7 +10,12 @@ let isScreenShared = false;
 let audioEnabled = true;
 let videoEnabled = true;
 let isStreaming = false; // Для отслеживания состояния трансляции
-const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const config = { 
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ] 
+};
 
 const localVideo = document.getElementById('local-video');
 const remoteVideos = document.getElementById('remote-videos');
@@ -397,10 +402,17 @@ function addMessageToChat(username, message) {
 
 // При загрузке страницы восстанавливаем чат из localStorage
 window.onload = () => {
-    const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-    chatHistory.forEach(msg => {
-        addMessageToChat(msg.username, msg.message);
-    });
+    try {
+        // Проверяем, есть ли доступ к localStorage
+        const test = localStorage.getItem('test');
+        const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]');
+        chatHistory.forEach(msg => {
+            addMessageToChat(msg.username, msg.message);
+        });
+    } catch (e) {
+        console.warn('localStorage недоступен или поврежден:', e);
+        // Просто используем только чат из комнаты
+    }
 };
 
 // Очищаем localStorage при уходе со страницы (по желанию)

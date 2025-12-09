@@ -2,11 +2,18 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import secrets
 import logging
+
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "your-secret-key"
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.config["SECRET_KEY"] = secrets.token_hex(32)
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*",  # Временно для тестирования
+    # или укажите конкретный домен: cors_allowed_origins=["http://ваш-сервер.com"]
+    logger=True,
+    engineio_logger=True
+)
 
 # Хранение информации о комнатах в памяти (в реальных приложениях используй базу данных)
 rooms = {}
@@ -137,13 +144,18 @@ def handle_offer(data):
     app.logger.info(f"Offer received from {request.sid} in room {data['room']}")
     room = data["room"]
     sender_username = data.get("username")  # Получаем имя отправителя
-    
+
     # Отправляем offer всем участникам комнаты, кроме отправителя
-    emit("offer", {
-        "offer": data["offer"],
-        "sender": sender_username,  # Добавляем имя отправителя
-        "room": room
-    }, room=room, skip_sid=request.sid)
+    emit(
+        "offer",
+        {
+            "offer": data["offer"],
+            "sender": sender_username,  # Добавляем имя отправителя
+            "room": room,
+        },
+        room=room,
+        skip_sid=request.sid,
+    )
 
 
 @socketio.on("answer")
@@ -153,12 +165,13 @@ def handle_answer(data):
     """
     room = data["room"]
     sender_username = data.get("username")
-    
-    emit("answer", {
-        "answer": data["answer"],
-        "sender": sender_username,
-        "room": room
-    }, room=room, skip_sid=request.sid)
+
+    emit(
+        "answer",
+        {"answer": data["answer"], "sender": sender_username, "room": room},
+        room=room,
+        skip_sid=request.sid,
+    )
 
 
 @socketio.on("candidate")
@@ -168,12 +181,14 @@ def handle_candidate(data):
     """
     room = data["room"]
     sender_username = data.get("username")
-    
-    emit("candidate", {
-        "candidate": data["candidate"],
-        "sender": sender_username,
-        "room": room
-    }, room=room, skip_sid=request.sid)
+
+    emit(
+        "candidate",
+        {"candidate": data["candidate"], "sender": sender_username, "room": room},
+        room=room,
+        skip_sid=request.sid,
+    )
+
 
 @socketio.on("toggle_track")
 def handle_toggle_track(data):

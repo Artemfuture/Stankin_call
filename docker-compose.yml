@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  web:
+    build: .  # Собирает образ из Dockerfile в текущей директории
+    container_name: video_chat_web
+    # volumes:
+    #   - .:/app  # Для разработки, чтобы изменения в коде сразу применялись
+    expose:  # Порт внутри сети Docker, не публикуется наружу
+      - "5000"
+    networks:
+      - app-network
+    restart: unless-stopped # Автоматический перезапуск при падении
+
+  nginx:
+    image: nginx:alpine
+    container_name: video_chat_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf  # Путь к вашему конфигу nginx внутри контейнера
+      # - /etc/letsencrypt:/etc/letsencrypt # Понадобится для SSL
+    depends_on:
+      - web
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge

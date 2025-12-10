@@ -12,4 +12,5 @@ EXPOSE 5000
 
 # Команда для запуска приложения
 # Используем eventlet для лучшей производительности с SocketIO
-CMD ["python", "-m", "eventlet.wsgi", "-k", "eventlet", "-b", "0.0.0.0:5000", "app.py"]
+# CMD ["python", "-m", "eventlet.wsgi", "-k", "eventlet", "-b", "0.0.0.0:5000", "app.py"]
+CMD ["python", "app.py"]

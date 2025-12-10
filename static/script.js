@@ -2,8 +2,8 @@
 const urlParams = new URLSearchParams(window.location.search);
 const username = urlParams.get('username') || 'Аноним';
 const roomID = document.getElementById('roomId').textContent;
-const socket = io('http://5.228.149.114:5000'); //prod
-// const socket = io('http://localhost:5000'); //test
+// const socket = io('http://5.228.149.114:5000'); //prod
+const socket = io('http://localhost:5000'); //test
 let localStream;
 let peerConnections = {}; // { username: RTCPeerConnection }
 let iceCandidateQueues = {};

@@ -129,26 +129,56 @@ def handle_message(data):
 
 @socketio.on("offer")
 def handle_offer(data):
-    """
-    Пересылает SDP offer от одного участника другим.
-    """
-    emit("offer", data, room=data["room"], skip_sid=request.sid)
+    room = data.get("room")
+    sender_username = data.get("username")
+    if not room or not sender_username:
+        print(f"WARNING: Offer received without room or username from {request.sid}")
+        return
+
+    data_to_send = data.copy()
+    data_to_send["username"] = sender_username
+
+    emit("offer", data_to_send, room=room, skip_sid=request.sid)
 
 
 @socketio.on("answer")
 def handle_answer(data):
     """
-    Пересылает SDP answer от одного участника другим.
+    Пересылает SDP answer от одного участника всем другим.
     """
-    emit("answer", data, room=data["room"], skip_sid=request.sid)
+    room = data.get("room")
+    sender_username = data.get("username")
+    if not room or not sender_username:
+        print(f"WARNING: Answer received without room or username from {request.sid}")
+        return
+
+    # Перед отправкой добавляем имя отправителя к данным
+    data_to_send = data.copy()
+    data_to_send["username"] = sender_username
+
+    # Отправляем answer всем участникам комнаты, кроме отправителя
+    emit("answer", data_to_send, room=room, skip_sid=request.sid)
 
 
 @socketio.on("candidate")
 def handle_candidate(data):
     """
-    Пересылает ICE-кандидат от одного участника другим.
+    Пересылает ICE-кандидат от одного участника всем другим.
     """
-    emit("candidate", data, room=data["room"], skip_sid=request.sid)
+    room = data.get("room")
+    sender_username = data.get("username")
+    if not room or not sender_username:
+        print(
+            f"WARNING: Candidate received without room or username from {request.sid}"
+        )
+        return
+
+    # Перед отправкой добавляем имя отправителя к данным
+    data_to_send = data.copy()
+    data_to_send["username"] = sender_username
+
+    # Отправляем candidate всем участникам комнаты, кроме отправителя
+    emit("candidate", data_to_send, room=room, skip_sid=request.sid)
 
 
 @socketio.on("toggle_track")

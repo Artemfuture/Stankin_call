@@ -2,10 +2,12 @@
 const urlParams = new URLSearchParams(window.location.search);
 const username = urlParams.get('username') || 'Аноним';
 const roomID = document.getElementById('roomId').textContent;
-const socket = io('http://5.228.149.114:5000');
-
+// const socket = io('http://5.228.149.114:5000'); //prod
+const socket = io('http://localhost:5000'); //test
 let localStream;
 let peerConnections = {}; // { username: RTCPeerConnection }
+let iceCandidateQueues = {};
+let offerCreationInProgress = {};
 let isScreenShared = false;
 let audioEnabled = true;
 let videoEnabled = true;
@@ -34,38 +36,54 @@ socket.emit('join', { room: roomID, username: username });
 
 // Обновление списка участников
 socket.on('user_joined', (data) => {
+    console.log('Пользователь вошёл:', data);
     isModerator = data.users.some(u => u.username === username && u.is_moderator);
     updateParticipantList(data.users);
 
-    // Восстанавливаем историю чата
     messagesDiv.innerHTML = '';
     data.messages.forEach(msg => {
         addMessageToChat(msg.username, msg.message);
     });
 
-    // Создаём соединения с новыми участниками
+    // Шаг 1: Создаём соединения с ВСЕМИ участниками (включая нового, если его ещё нет)
     data.users.forEach(user => {
         if (user.username !== username && !peerConnections[user.username]) {
+            console.log(`Создаём соединение с пользователем: ${user.username} при user_joined`);
             createPeerConnection(user.username);
         }
     });
 
-    // Отправляем offer новому участнику от всех, у кого есть поток
+    // Шаг 2: Если у нас есть локальный поток, отправляем offer ВСЕМ, кроме себя
     if (localStream) {
-        createOffer(data.username);
-    }
-
-    // Отправляем offer всем, кто уже был в комнате
-    if (localStream) {
+        // Отправляем offer ВСЕМ, кроме себя
         data.users.forEach(user => {
             if (user.username !== username) {
-                createOffer(user.username);
+                // Проверяем, не идёт ли уже создание offer для этого пользователя
+                if (!offerCreationInProgress[user.username]) {
+                    console.log(`Отправляем offer пользователю ${user.username} при событии user_joined (цикл по data.users)`);
+                    // Устанавливаем флаг, что создание offer началось
+                    offerCreationInProgress[user.username] = true;
+                    createOffer(user.username);
+                } else {
+                    console.log(`Пропускаем offer для ${user.username}, так как он уже идёт.`);
+                }
             }
         });
+
+        // Отправляем offer НОВОМУ пользователю (data.username), если он не "я" и offer ещё не идёт
+        if (data.username && data.username !== username && !offerCreationInProgress[data.username]) {
+            console.log(`Отправляем offer НОВОМУ пользователю ${data.username} при событии user_joined`);
+            // Устанавливаем флаг, что создание offer началось
+            offerCreationInProgress[data.username] = true;
+            createOffer(data.username);
+        } else if (data.username && data.username !== username && offerCreationInProgress[data.username]) {
+            console.log(`Пропускаем offer для НОВОГО пользователя ${data.username}, так как он уже идёт.`);
+        }
     }
 });
 
 socket.on('user_left', (data) => {
+    console.log(`${data.username} покинул комнату.`);
     // Закрываем соединение
     if (peerConnections[data.username]) {
         peerConnections[data.username].close();
@@ -198,6 +216,34 @@ startBtn.onclick = async () => {
         screenBtn.disabled = false;
         toggleAudioBtn.disabled = false;
         toggleVideoBtn.disabled = false;
+        for (const targetUser in peerConnections) {
+            const pc = peerConnections[targetUser];
+            if (pc && pc.signalingState === 'stable') { // Убедимся, что можно добавить трек и сделать renegotiation
+                console.log(`Добавляем локальные треки к существующему соединению с ${targetUser}`);
+                const tracksToAdd = localStream.getTracks();
+                let tracksAdded = false;
+                for (const track of tracksToAdd) {
+                    if (track.enabled) {
+                        // Проверяем, не добавлен ли уже этот трек к этому соединению
+                        const sender = pc.getSenders().find(s => s.track && s.track.id === track.id);
+                        if (!sender) {
+                            pc.addTrack(track, localStream);
+                            tracksAdded = true;
+                            console.log(`Трек ${track.kind} добавлен к соединению с ${targetUser}`);
+                        } else {
+                            console.log(`Трек ${track.kind} уже добавлен к соединению с ${targetUser}`);
+                        }
+                    }
+                }
+                // Если были добавлены новые треки, инициируем renegotiation
+                if (tracksAdded) {
+                    console.log(`Инициируем renegotiation для соединения с ${targetUser}`);
+                    createOffer(targetUser); // Пересоздаём offer с новыми треками
+                }
+            } else {
+                console.log(`Не добавляем треки к соединению с ${targetUser}, состояние: ${pc ? pc.signalingState : 'не существует'}`);
+            }
+        }
     } else {
         // Завершаем трансляцию
         if (localStream) {
@@ -214,73 +260,247 @@ startBtn.onclick = async () => {
 
 // Создание WebRTC-соединения
 function createPeerConnection(targetUser) {
+    if (peerConnections[targetUser]) {
+        console.log(`Соединение с ${targetUser} уже существует.`, peerConnections[targetUser].signalingState, peerConnections[targetUser].iceConnectionState);
+        return;
+    }
+
+    console.log(`Создаём соединение с ${targetUser}`);
     const pc = new RTCPeerConnection(config);
+
+    // Инициализируем очередь ICE-кандидатов и флаг offer для этого пользователя
+    iceCandidateQueues[targetUser] = [];
+    offerCreationInProgress[targetUser] = false; // Изначально не создаём offer
+
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            socket.emit('candidate', { candidate: event.candidate, room: roomID, sender: username, target: targetUser });
+            console.log(`Отправляем ICE-кандидат для ${targetUser}`, event.candidate);
+            socket.emit('candidate', {
+                candidate: event.candidate,
+                room: roomID,
+                username: username,
+                target: targetUser
+            });
+        } else {
+            console.log(`Все ICE-кандидаты для ${targetUser} отправлены.`);
         }
     };
+
     pc.ontrack = (event) => {
-        // Проверяем, есть ли уже видео для этого пользователя
-        const existingVideo = document.getElementById(`video-${targetUser}`);
-        if (existingVideo) return;
+        console.log(`Получен трек от ${targetUser}`, event.streams[0]);
+        const videoId = `video-${targetUser}`;
+        let video = document.getElementById(videoId);
 
-        const video = document.createElement('video');
-        video.id = `video-${targetUser}`;
+        if (!video) {
+            console.log(`Создаём новый элемент video для ${targetUser}`);
+            video = document.createElement('video');
+            video.id = videoId;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.classList.add('video-item');
+            remoteVideos.appendChild(video);
+        } else {
+            console.log(`Обновляем srcObject существующего элемента video для ${targetUser}`);
+        }
+
         video.srcObject = event.streams[0];
-        video.autoplay = true;
-        video.playsInline = true;
-        video.classList.add('video-item');
-        remoteVideos.appendChild(video);
     };
-    if (localStream) {
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-    }
-    peerConnections[targetUser] = pc;
-}
 
+    if (localStream) { // <-- ВАЖНО: проверяем, что localStream существует
+        console.log(`Добавляем локальный поток к соединению с ${targetUser}`);
+        localStream.getTracks().forEach(track => {
+            // Добавляем только активные треки
+            if (track.enabled) {
+                 pc.addTrack(track, localStream);
+            }
+        });
+    } else {
+        console.log(`Предупреждение: localStream отсутствует при создании соединения с ${targetUser}. Поток не будет отправлен.`);
+        // В реальной ситуации вы можете подписаться на событие, когда localStream станет доступен,
+        // и добавить треки позже.
+    }
+
+    pc.onconnectionstatechange = (event) => {
+        console.log(`Состояние соединения с ${targetUser} изменилось:`, pc.connectionState);
+    };
+
+    pc.onsignalingstatechange = (event) => {
+        console.log(`Состояние сигнализации с ${targetUser} изменилось:`, pc.signalingState);
+        // Если состояние стало 'stable', можно сбросить флаг offer
+        if (pc.signalingState === 'stable') {
+            offerCreationInProgress[targetUser] = false;
+            console.log(`Сбросили флаг offerCreationInProgress для ${targetUser}`);
+        }
+    };
+
+    peerConnections[targetUser] = pc;
+    console.log(`Соединение с ${targetUser} создано и сохранено.`, pc.signalingState, pc.iceConnectionState);
+}
 // Создание offer для отправки другому участнику
 function createOffer(targetUser) {
-    if (!peerConnections[targetUser]) {
-        createPeerConnection(targetUser);
-    }
+    console.log(`Попытка создать offer для ${targetUser}`);
     const pc = peerConnections[targetUser];
+    if (!pc) {
+        console.error(`Соединение с ${targetUser} не найдено при попытке создать offer.`);
+        // Сбрасываем флаг, если соединение вдруг исчезло
+        offerCreationInProgress[targetUser] = false;
+        return;
+    }
+
+    // Проверяем состояние перед созданием offer
+    if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-remote-offer') {
+        console.warn(`Состояние соединения с ${targetUser} не позволяет создать offer: ${pc.signalingState}`);
+        // Сбрасываем флаг, если состояние неожиданно изменилось
+        offerCreationInProgress[targetUser] = false;
+        return;
+    }
+
+    // Устанавливаем флаг, что offer идёт (дублирующая проверка, но лишней не будет)
+    offerCreationInProgress[targetUser] = true;
+
     pc.createOffer()
         .then(offer => {
-            pc.setLocalDescription(offer);
-            socket.emit('offer', { offer, room: roomID, sender: username, target: targetUser });
+            console.log(`Создан offer для ${targetUser}`, offer);
+            return pc.setLocalDescription(offer);
+        })
+        .then(() => {
+            console.log(`Установлен local description для ${targetUser}`, pc.localDescription);
+            // Отправляем offer пользователю targetUser
+            socket.emit('offer', {
+                offer: pc.localDescription,
+                room: roomID,
+                username: username,
+                target: targetUser
+            });
+        })
+        .catch(e => {
+            console.error('Ошибка создания offer:', e, e.name, e.message);
+            // В случае ошибки, сбрасываем флаг, чтобы можно было попробовать снова
+            offerCreationInProgress[targetUser] = false;
         });
+}
+function sendOffer(targetUser) {
+    console.log(`Отправляем offer для ${targetUser}`);
+    const pc = peerConnections[targetUser];
+    if (!pc) {
+        console.error(`Соединение с ${targetUser} не найдено при попытке создать offer.`);
+        return;
+    }
+
+    pc.createOffer()
+        .then(offer => {
+            console.log(`Создан offer для ${targetUser}`, offer);
+            return pc.setLocalDescription(offer);
+        })
+        .then(() => {
+            console.log(`Установлен local description для ${targetUser}`, pc.localDescription);
+            // Отправляем offer пользователю targetUser
+            socket.emit('offer', {
+                offer: pc.localDescription,
+                room: roomID,
+                username: username,
+                target: targetUser
+            });
+        })
+        .catch(e => console.error('Ошибка создания offer:', e, e.name, e.message));
 }
 
 socket.on('offer', async (data) => {
-    const targetUser = data.sender;
-    if (!peerConnections[targetUser]) {
-        createPeerConnection(targetUser);
+    console.log('Получен offer от:', data.username, data);
+    const senderUser = data.username;
+
+    if (!peerConnections[senderUser]) {
+        console.log(`Соединение с ${senderUser} не существует, создаём его при получении offer.`);
+        createPeerConnection(senderUser);
     }
-    const pc = peerConnections[targetUser];
-    await pc.setRemoteDescription(data.offer);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    socket.emit('answer', { answer, room: roomID, sender: username, target: targetUser });
+
+    const pc = peerConnections[senderUser];
+    if (!pc) {
+        console.error(`Не удалось создать/найти соединение с ${senderUser} для offer`);
+        offerCreationInProgress[senderUser] = false; // Сбрасываем флаг, если соединения нет
+        return;
+    }
+
+    try {
+        await pc.setRemoteDescription(data.offer);
+        console.log(`Установлен remote description для ${senderUser} (offer)`);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        console.log(`Отправляем answer пользователю ${senderUser}`);
+        socket.emit('answer', {
+            answer: answer,
+            room: roomID,
+            username: username,
+            target: senderUser
+        });
+
+        // После установки remoteDescription, добавляем отложенные кандидаты
+        const pendingCandidates = iceCandidateQueues[senderUser] || [];
+        if (pendingCandidates.length > 0) {
+            console.log(`Добавляем ${pendingCandidates.length} отложенных кандидатов для ${senderUser}`);
+            for (const candidate of pendingCandidates) {
+                await pc.addIceCandidate(candidate);
+            }
+            // Очищаем очередь
+            iceCandidateQueues[senderUser] = [];
+        }
+    } catch (e) {
+        console.error('Ошибка обработки offer:', e, e.name, e.message);
+        // В случае ошибки, сбрасываем флаг offer, чтобы можно было попробовать снова
+        offerCreationInProgress[senderUser] = false;
+    }
 });
 
 socket.on('answer', async (data) => {
-    const targetUser = data.sender;
-    const pc = peerConnections[targetUser];
+    console.log('Получен answer от:', data.username, data);
+    const senderUser = data.username;
+    const pc = peerConnections[senderUser];
+
     if (pc) {
-        await pc.setRemoteDescription(data.answer);
+        try {
+            await pc.setRemoteDescription(data.answer);
+            console.log(`Установлен remote description для ${senderUser} (answer)`);
+            // После установки remoteDescription, добавляем отложенные кандидаты
+            const pendingCandidates = iceCandidateQueues[senderUser] || [];
+            if (pendingCandidates.length > 0) {
+                console.log(`Добавляем ${pendingCandidates.length} отложенных кандидатов для ${senderUser}`);
+                for (const candidate of pendingCandidates) {
+                    await pc.addIceCandidate(candidate);
+                }
+                // Очищаем очередь
+                iceCandidateQueues[senderUser] = [];
+            }
+        } catch (e) {
+            console.error('Ошибка обработки answer:', e, e.name, e.message);
+            // Сбрасываем флаг offer, если была ошибка при обработке ответа
+            offerCreationInProgress[senderUser] = false;
+        }
+    } else {
+        console.warn(`Соединение с ${senderUser} не найдено для ответа.`);
+        // Сбрасываем флаг, если соединение исчезло
+        offerCreationInProgress[senderUser] = false;
     }
 });
 
 socket.on('candidate', async (data) => {
-    const targetUser = data.sender;
-    const pc = peerConnections[targetUser];
-    if (pc) {
-        try {
-            await pc.addIceCandidate(data.candidate);
-        } catch (e) {
-            console.error('Ошибка добавления ICE-кандидата', e);
+    console.log('Получен candidate от:', data.username, data);
+    const senderUser = data.username;
+    const pc = peerConnections[senderUser];
+
+    if (pc && data.candidate) {
+        if (pc.remoteDescription) {
+            try {
+                await pc.addIceCandidate(data.candidate);
+                console.log(`Добавлен ICE-кандидат от ${senderUser}`);
+            } catch (e) {
+                console.error('Ошибка добавления ICE-кандидата:', e, e.name, e.message);
+            }
+        } else {
+            console.log(`remoteDescription для ${senderUser} ещё не установлен, добавляем кандидат в очередь`);
+            iceCandidateQueues[senderUser]?.push(data.candidate);
         }
+    } else {
+        console.warn(`Соединение с ${senderUser} не найдено для candidate или candidate пуст.`, pc, data.candidate);
     }
 });
 
@@ -354,9 +574,10 @@ socket.on('toggle_track', (data) => {
 sendBtn.onclick = () => {
     const msg = messageInput.value;
     if (msg.trim()) {
+        // Отправляем сообщение в комнату
         socket.emit('message', { room: roomID, username, message: msg });
-        addMessageToChat(username, msg);
-        messageInput.value = '';
+        // УБРАЛИ: addMessageToChat(username, msg);
+        messageInput.value = ''; // Очищаем поле
     }
 };
 

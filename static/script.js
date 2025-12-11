@@ -221,6 +221,11 @@ function copyRoomId() {
 // --- Начало/завершение трансляции ---
 startBtn.onclick = async () => {
     if (!isStreaming) {
+        // Получаем поток
+        if (localStream) {
+            console.warn("Предупреждение: localStream уже существует. Останавливаем старый поток.");
+            localStream.getTracks().forEach(track => track.stop()); // Освобождаем устройства
+        }
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         startBtn.textContent = 'Завершить трансляцию';
@@ -228,30 +233,27 @@ startBtn.onclick = async () => {
         screenBtn.disabled = false;
         toggleAudioBtn.disabled = false;
         toggleVideoBtn.disabled = false;
+
+        // --- НОВОЕ: Добавляем локальный поток КО ВСЕМ СУЩЕСТВУЮЩИМ СОЕДИНЕНИЯМ ---
         for (const targetUser in peerConnections) {
             const pc = peerConnections[targetUser];
-            if (pc && pc.signalingState === 'stable') { // Убедимся, что можно добавить трек и сделать renegotiation
+            if (pc && pc.signalingState === 'stable') { // Проверяем состояние перед добавлением трека
                 console.log(`Добавляем локальные треки к существующему соединению с ${targetUser}`);
-                const tracksToAdd = localStream.getTracks();
-                let tracksAdded = false;
-                for (const track of tracksToAdd) {
+                localStream.getTracks().forEach(track => {
                     if (track.enabled) {
                         // Проверяем, не добавлен ли уже этот трек к этому соединению
                         const sender = pc.getSenders().find(s => s.track && s.track.id === track.id);
                         if (!sender) {
                             pc.addTrack(track, localStream);
-                            tracksAdded = true;
                             console.log(`Трек ${track.kind} добавлен к соединению с ${targetUser}`);
                         } else {
                             console.log(`Трек ${track.kind} уже добавлен к соединению с ${targetUser}`);
                         }
                     }
-                }
-                // Если были добавлены новые треки, инициируем renegotiation
-                if (tracksAdded) {
-                    console.log(`Инициируем renegotiation для соединения с ${targetUser}`);
-                    createOffer(targetUser); // Пересоздаём offer с новыми треками
-                }
+                });
+                // После добавления треков, инициируем renegotiation (новый offer)
+                console.log(`Инициируем renegotiation для соединения с ${targetUser}`);
+                createOffer(targetUser); // Вызываем вашу функцию createOffer
             } else {
                 console.log(`Не добавляем треки к соединению с ${targetUser}, состояние: ${pc ? pc.signalingState : 'не существует'}`);
             }
@@ -511,54 +513,117 @@ socket.on('offer', async (data) => {
 });
 // --- КОНЕЦ ОБНОВЛЁННОГО ОБРАБОТЧИКА offer ---
 
-// --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК answer ---
+// В script.js старого участника (вс)
 socket.on('answer', async (data) => {
     const senderUser = data.username; // Кто отправил answer
-    const targetUser = data.target;   // Кому отправлен answer
+    const targetUser = data.target;   // Кому отправлен answer (должно быть ваше имя)
 
-    // --- НОВОЕ: ПРОВЕРКА ЦЕЛИ ---
+    // --- ПРОВЕРКА ЦЕЛИ ---
     if (targetUser !== username) {
         console.log(`Получен answer от ${senderUser} для ${targetUser}, но я - ${username}. Игнорирую.`);
-        return; // Выходим, если answer не для меня
+        return;
     }
-    // --- КОНЕЦ НОВОГО ---
+    // --- КОНЕЦ ПРОВЕРКИ ЦЕЛИ ---
 
     console.log('Получен answer от:', senderUser, data);
     const pc = peerConnections[senderUser];
 
     if (pc) {
-        // Проверяем состояние перед setRemoteDescription
+        // --- НОВОЕ: ПРОВЕРКА СОСТОЯНИЯ ---
         if (pc.signalingState !== 'have-remote-offer') {
-            console.warn(`Состояние соединения с ${senderUser} не позволяет установить remote answer: ${pc.signalingState}`);
-            // Сбрасываем флаг, если была ошибка при обработке ответа
-            offerCreationInProgress[senderUser] = false;
-            return;
-        }
+            // Состояние 'have-remote-offer' означает, что мы установили *его* offer и ожидаем *его* answer.
+            // Состояние 'have-local-offer' означает, что *мы* отправили *ему* offer и ожидаем *его* answer.
+            // Однако, если *мы* отправили offer, то после установки *его* offer (если он был), состояние станет 'have-remote-offer'.
+            // Нет, подождите. Если *мы* отправляем offer *ему*, то наше состояние будет 'have-local-offer'.
+            // Мы *получаем* offer *от него*, тогда наше состояние становится 'have-remote-offer'.
+            // Значит, если мы *послали offer*, то наше состояние будет 'have-local-offer'.
+            // И мы ожидаем получить *answer* в состоянии 'have-local-offer'.
+            // ОШИБКА В ТОМ, ЧТО СОСТОЯНИЕ 'have-local-offer' - ЭТО ПРАВИЛЬНОЕ СОСТОЯНИЕ ДЛЯ ПОЛУЧЕНИЯ ANSWER НА НАШ OFFER.
+            // Значит, проверка должна быть на 'have-local-offer', если мы ожидаем answer на *наш* offer.
+            // Но лог говорит "have-local-offer", а потом ошибка при setRemoteDescription(answer).
+            // Это означает, что pc.setRemoteDescription(data.answer) вызывается в состоянии have-local-offer,
+            // но для *answer* нужно состояние 'have-local-offer' (после установки remote offer) или 'stable' (после установки answer).
+            // Нет, после отправки offer, состояние становится have-local-offer.
+            // После получения answer и установки его, состояние становится stable.
+            // Значит, проблема в том, что pc.setRemoteDescription(data.answer) вызывается, когда signalingState = 'have-local-offer'.
+            // Это НЕПРАВИЛЬНО. НЕЛЬЗЯ вызывать setRemoteDescription(answer) в состоянии 'have-local-offer'.
+            // Правильное состояние для answer - 'have-remote-offer'. Но если *мы* отправили offer, то у нас НЕ может быть 'have-remote-offer'.
+            // ОШИБКА: Мы ожидаем получить answer на *его* offer, когда у нас 'have-remote-offer'.
+            // Мы ожидаем получить answer на *наш* offer, когда у нас 'have-local-offer'.
+            // В состоянии 'have-local-offer' нельзя вызывать setRemoteDescription(answer).
+            // Нужно сначала установить remoteDescription(answer), чтобы состояние стало 'stable'.
+            // Нет, всё путается.
+            // Правильная логика:
+            // 1. Я (вс) отправляю offer -> signalingState = 'have-local-offer'.
+            // 2. Я получаю answer от (пав) -> signalingState всё ещё 'have-local-offer'.
+            // 3. Я вызываю pc.setRemoteDescription(answer) -> signalingState меняется на 'stable'.
+            // ОШИБКА в логе говорит, что вызов pc.setRemoteDescription(answer) был в состоянии 'have-local-offer', но он НЕ должен был вызываться, если signallingState !== 'have-remote-offer'.
+            // Это означает, что ВАША ПРОВЕРКА в коде была НЕПРАВИЛЬНОЙ.
+            // Нужно проверять, что мы получаем answer на offer, который ЖДЁМ, а не на offer, который ОТПРАВИЛИ.
+            // Нет, подождите.
+            // Если *я* отправляю offer, то signalingState = 'have-local-offer'.
+            // Когда я получаю answer на *мой* offer, я вызываю setRemoteDescription(answer). Это ПРАВИЛЬНО вызывать в состоянии 'have-local-offer'.
+            // Ошибка 'have-local-offer' при установке answer означает, что setRemoteDescription(answer) вызывается, когда signalingState = 'have-local-offer', но это состояние ожидает *другой* тип SDP.
+            // Это может произойти, если:
+            // 1. Мы получили offer от другого участника, установили его (сигнализация была 'have-remote-offer'), создали answer и отправили.
+            // 2. Затем мы получили answer на *наш* предыдущий offer от *этого же* участника (а не на его offer, на который мы ответили).
+            // 3. Т.е. участник прислал offer и answer одновременно или в неправильной последовательности.
+            // 4. Или наш обработчик сигнализации не различает, на *чей* offer пришёл answer.
+            // 5. Или offerCreationInProgress не сбрасывается правильно, и мы обрабатываем answer на старый offer, когда уже идёт новый процесс.
 
-        try {
-            await pc.setRemoteDescription(data.answer);
-            console.log(`Установлен remote description для ${senderUser} (answer)`);
-            // После установки remoteDescription, добавляем отложенные кандидаты
-            const pendingCandidates = iceCandidateQueues[senderUser] || [];
-            if (pendingCandidates.length > 0) {
-                console.log(`Добавляем ${pendingCandidates.length} отложенных кандидатов для ${senderUser}`);
-                for (const candidate of pendingCandidates) {
-                    await pc.addIceCandidate(candidate);
-                }
-                iceCandidateQueues[senderUser] = []; // Очищаем очередь
+            // Вывод: Проверка должна быть такой:
+            // Если я отправлял offer, я ожидай answer. Состояние будет 'have-local-offer'. Это нормально.
+            // Если я получил offer, я устанавливал его, создавал answer и отправлял. Состояние было 'have-remote-offer', стало 'stable'.
+            // Если я снова получаю offer, состояние станет 'have-remote-offer'.
+            // Если я получаю answer, когда состояние 'have-remote-offer', это ОШИБКА. Answer должен прийти после offer, который Я отправил.
+            // НЕТ.
+            // Если я получил offer от другого участника, я устанавливаю его через setRemoteDescription. Состояние становится 'have-remote-offer'.
+            // Затем я создаю answer и устанавливаю его через setLocalDescription. Состояние становится 'stable'.
+            // Если я отправляю offer другому участнику, я сначала создаю его, затем устанавливаю через setLocalDescription. Состояние становится 'have-local-offer'.
+            // Затем я жду answer. Когда приходит answer, я вызываю setRemoteDescription(answer). Состояние становится 'stable'.
+            // Ошибка 'have-local-offer' при установке answer говорит о том, что мы пытаемся установить answer, когда ждём offer.
+            // Но лог говорит, что offer был отправлен, и затем пришёл answer.
+            // Значит, в момент `pc.setRemoteDescription(data.answer)` состояние было `have-local-offer`, что ПРАВИЛЬНО для получения answer на *мой* offer.
+            // Значит, ОШИБКА В ТОМ, ЧТО БРАУЗЕР СЧИТАЕТ, ЧТО В ЭТОМ СОСТОЯНИИ НЕЛЬЗЯ УСТАНОВИТЬ ANSWER.
+            // Это может быть из-за предыдущей ошибки или из-за того, что `answer` пришёл *после* того, как состояние *уже* изменилось с `have-local-offer` на `stable` (например, из-за race condition или неправильной обработки).
+            // Или, более вероятно, из-за того, что `answer` пришёл *для соединения, которое уже получило answer или уже в состоянии stable*.
+
+            // ПРАВИЛЬНАЯ ПРОВЕРКА:
+            // Убедимся, что состояние позволяет установить *answer* на *наш* offer.
+            // Это состояние 'have-local-offer'.
+            if (pc.signalingState === 'have-local-offer') {
+                 console.log(`Устанавливаем remote description для ${senderUser} (answer на наш offer)`);
+                 try {
+                     await pc.setRemoteDescription(data.answer);
+                     console.log(`Установлен remote description для ${senderUser} (answer)`);
+                     // После установки remoteDescription, добавляем отложенные кандидаты
+                     const pendingCandidates = iceCandidateQueues[senderUser] || [];
+                     if (pendingCandidates.length > 0) {
+                         console.log(`Добавляем ${pendingCandidates.length} отложенных кандидатов для ${senderUser}`);
+                         for (const candidate of pendingCandidates) {
+                             await pc.addIceCandidate(candidate);
+                         }
+                         iceCandidateQueues[senderUser] = []; // Очищаем очередь
+                     }
+                 } catch (e) {
+                      console.error('Ошибка обработки answer (на наш offer):', e, e.name, e.message);
+                      // Сбрасываем флаг offer, если была ошибка при обработке ответа
+                      offerCreationInProgress[senderUser] = false;
+                 }
+            } else {
+                 console.warn(`Состояние соединения с ${senderUser} не позволяет установить remote answer: ${pc.signalingState}. Ожидалось 'have-local-offer'.`);
+                 // Возможно, offerCreationInProgress не сброшен, или пришёл лишний/поздний answer.
+                 // Сбрасываем флаг, чтобы не блокировать будущие offer/answer
+                 offerCreationInProgress[senderUser] = false;
             }
-        } catch (e) {
-            console.error('Ошибка обработки answer:', e, e.name, e.message);
-            // Сбрасываем флаг, если была ошибка при обработке ответа
+            // --- КОНЕЦ НОВОГО ---
+        } else {
+            console.warn(`Соединение с ${senderUser} не найдено для ответа.`);
+            // Сбрасываем флаг, если соединение исчезло
             offerCreationInProgress[senderUser] = false;
         }
-    } else {
-        console.warn(`Соединение с ${senderUser} не найдено для ответа.`);
-        // Сбрасываем флаг, если соединение исчезло
-        offerCreationInProgress[senderUser] = false;
     }
 });
-// --- КОНЕЦ ОБНОВЛЁННОГО ОБРАБОТЧИКА answer ---
 
 // --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК candidate ---
 socket.on('candidate', async (data) => {

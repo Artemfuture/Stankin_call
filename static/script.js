@@ -15,10 +15,10 @@ let videoEnabled = true;
 let isStreaming = false;
 const config = {
     iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.l.google.com:19302'},
+        { urls: 'stun:stun1.l.google.com:19302'},
         {
-            urls: 'turn:ip?transport=udp',
+            urls: 'turn:ip:3478?transport=udp',
             username: 'user',
             credential: 'password'
         },
@@ -223,10 +223,16 @@ startBtn.onclick = async () => {
     if (!isStreaming) {
         // Получаем поток
         if (localStream) {
-            console.warn("Предупреждение: localStream уже существует. Останавливаем старый поток.");
-            localStream.getTracks().forEach(track => track.stop()); // Освобождаем устройства
+            console.warn("Предупреждение: localStream уже существует. Проверьте логику.");
+            // Если вы хотите перезапустить поток, остановите старый
+            // localStream.getTracks().forEach(track => track.stop());
+            // localStream = null;
+            // return; // или продолжить, если это ожидаемое поведение
+        } else {
+            // Только если localStream не существует, получаем его
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         }
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        // localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         startBtn.textContent = 'Завершить трансляцию';
         isStreaming = true;
@@ -237,23 +243,28 @@ startBtn.onclick = async () => {
         // --- НОВОЕ: Добавляем локальный поток КО ВСЕМ СУЩЕСТВУЮЩИМ СОЕДИНЕНИЯМ ---
         for (const targetUser in peerConnections) {
             const pc = peerConnections[targetUser];
-            if (pc && pc.signalingState === 'stable') { // Проверяем состояние перед добавлением трека
+            if (pc && pc.signalingState === 'stable') {
                 console.log(`Добавляем локальные треки к существующему соединению с ${targetUser}`);
-                localStream.getTracks().forEach(track => {
+                const tracksToAdd = localStream.getTracks();
+                let tracksAdded = false;
+                for (const track of tracksToAdd) {
                     if (track.enabled) {
                         // Проверяем, не добавлен ли уже этот трек к этому соединению
                         const sender = pc.getSenders().find(s => s.track && s.track.id === track.id);
                         if (!sender) {
                             pc.addTrack(track, localStream);
+                            tracksAdded = true;
                             console.log(`Трек ${track.kind} добавлен к соединению с ${targetUser}`);
                         } else {
                             console.log(`Трек ${track.kind} уже добавлен к соединению с ${targetUser}`);
                         }
                     }
-                });
-                // После добавления треков, инициируем renegotiation (новый offer)
-                console.log(`Инициируем renegotiation для соединения с ${targetUser}`);
-                createOffer(targetUser); // Вызываем вашу функцию createOffer
+                }
+                // Если были добавлены новые треки, инициируем renegotiation
+                if (tracksAdded) {
+                    console.log(`Инициируем renegotiation для соединения с ${targetUser}`);
+                    createOffer(targetUser); // Вызываем вашу функцию createOffer
+                }
             } else {
                 console.log(`Не добавляем треки к соединению с ${targetUser}, состояние: ${pc ? pc.signalingState : 'не существует'}`);
             }

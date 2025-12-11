@@ -311,7 +311,6 @@ def on_leave(data):
 if __name__ == "__main__":
     # Запуск сервера на 0.0.0.0 для доступа с других устройств
     print("Приложение готово к запуску SocketIO...")
-    # context = ("cert.pem", "key.pem")
     socketio.run(
         app,
         host="0.0.0.0",

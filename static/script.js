@@ -305,6 +305,7 @@ function createPeerConnection(targetUser) {
         }
 
         video.srcObject = event.streams[0];
+        video.play().catch(e => console.log("Ошибка воспроизведения:", e));
     };
 
     if (localStream) { // <-- ВАЖНО: проверяем, что localStream существует

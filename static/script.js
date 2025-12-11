@@ -13,11 +13,11 @@ let isScreenShared = false;
 let audioEnabled = true;
 let videoEnabled = true;
 let isStreaming = false;
-const config = { 
+const config = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' }
-    ] 
+    ]
 };
 
 const localVideo = document.getElementById('local-video');
@@ -359,6 +359,12 @@ function createPeerConnection(targetUser) {
             offerCreationInProgress[targetUser] = false;
             console.log(`Сбросили флаг offerCreationInProgress для ${targetUser}`);
         }
+    };
+    pc.oniceconnectionstatechange = (event) => {
+    console.log(`Состояние ICE-соединения с ${targetUser} изменилось:`, pc.iceConnectionState);
+    // Если pc.iceConnectionState === 'failed', это означает, что WebRTC не смог
+    // установить соединение через ICE (не смог передать данные через найденный маршрут).
+    // Это и есть основная причина, почему видео/аудио не работает, несмотря на ontrack.
     };
 
     peerConnections[targetUser] = pc;

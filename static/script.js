@@ -288,7 +288,15 @@ function createPeerConnection(targetUser) {
     };
 
     pc.ontrack = (event) => {
-        console.log(`Получен трек от ${targetUser}`, event.streams[0]);
+        const stream = event.streams[0];
+        console.log(`Получен трек от ${targetUser}, поток:`, stream);
+
+        // Проверяем, не привязан ли этот поток уже к видео
+        if (attachedStreams.has(stream.id)) {
+            console.log(`Поток ${stream.id} от ${targetUser} уже привязан.`);
+            return; // Выходим, не создавая/обновляя видео
+        }
+
         const videoId = `video-${targetUser}`;
         let video = document.getElementById(videoId);
 
@@ -298,14 +306,23 @@ function createPeerConnection(targetUser) {
             video.id = videoId;
             video.autoplay = true;
             video.playsInline = true;
+            // video.muted = true; // Добавьте, если нужно
             video.classList.add('video-item');
             remoteVideos.appendChild(video);
-        } else {
-            console.log(`Обновляем srcObject существующего элемента video для ${targetUser}`);
         }
 
-        video.srcObject = event.streams[0];
-        video.play().catch(e => console.log("Ошибка воспроизведения:", e));
+        // Обновляем srcObject
+        console.log(`Привязываем поток ${stream.id} к элементу video для ${targetUser}`);
+        video.srcObject = stream;
+        attachedStreams.add(stream.id); // Добавляем ID потока в набор привязанных
+
+        // Попробовать вызвать play()
+        video.play().catch(e => {
+            console.log("Ошибка воспроизведения:", e);
+            // Возможные ошибки:
+            // - AbortError: если srcObject изменится снова до старта воспроизведения (редко при такой логике)
+            // - NotAllowedError: если автовоспроизведение заблокировано (редко для ontrack, но возможно)
+        });
     };
 
     if (localStream) { // <-- ВАЖНО: проверяем, что localStream существует

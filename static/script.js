@@ -234,6 +234,7 @@ startBtn.onclick = async () => {
         }
         // localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
+        localVideo.classList.add('video-mirror');
         startBtn.textContent = 'Завершить трансляцию';
         isStreaming = true;
         screenBtn.disabled = false;
@@ -337,24 +338,32 @@ function createPeerConnection(targetUser) {
             video.id = videoId;
             video.autoplay = true;
             video.playsInline = true;
-            // video.muted = true; // Добавьте, если нужно
+            // video.muted = true; // <-- РАССМОТРИТЕ возможность добавления muted для автовоспроизведения
             video.classList.add('video-item');
+            video.classList.add('remote-video-mirror');
             remoteVideos.appendChild(video);
+        } else {
+            console.log(`Обновляем srcObject существующего элемента video для ${targetUser}`);
         }
 
         // Обновляем srcObject
+        if (video.srcObject === stream) {
+            console.log(`srcObject для ${targetUser} уже установлен на нужный поток.`);
+            return; // Не пытаемся воспроизводить снова
+        }
         console.log(`Привязываем поток ${stream.id} к элементу video для ${targetUser}`);
         video.srcObject = stream;
         attachedStreams.add(stream.id); // Добавляем ID потока в набор привязанных
 
         // Попробовать вызвать play()
         video.play().catch(e => {
-            console.log("Ошибка воспроизведения для", targetUser, ":", e); // <-- Более подробное сообщение
-            console.error("Подробная ошибка воспроизведения:", e); // <-- Для лучшего отображения в консоли
-            // Возможные ошибки:
-            // - AbortError: если srcObject изменится снова до старта воспроизведения (редко при такой логике)
-            // - NotAllowedError: если автовоспроизведение заблокировано (редко для ontrack, но возможно)
-        });
+            console.log(`Ошибка воспроизведения для ${targetUser} :`, e.name, e.message); // <-- Более информативное сообщение
+            console.error("Подробная ошибка воспроизведения:", e); // <-- Для детализации
+        // Возможные ошибки:
+        // - AbortError: если srcObject изменится снова до старта воспроизведения (редко при такой логике)
+        // - NotAllowedError: если автовоспроизведение с аудио заблокировано (наиболее вероятно)
+        // В случае NotAllowedError, пользователь должен взаимодействовать с элементом (например, кликнуть по видео) или разрешить автовоспроизведение для сайта.
+    });
     };
     // --- КОНЕЦ ОБНОВЛЁННОГО ontrack ---
 

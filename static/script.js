@@ -21,6 +21,12 @@ const config = {
             urls: 'ip',
             username: 'user',
             credential: 'password'
+        },
+        {
+            urls: 'turn:ip:3478?transport=tcp', 
+            username: 'user', 
+            credential: 'password'  
+            // credentialAlgorithm: 'SHA-1' // Добавьте, если в конфиге coturn указан fingerprint
         }
     ]
 };

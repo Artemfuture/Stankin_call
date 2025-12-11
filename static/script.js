@@ -18,14 +18,14 @@ const config = {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         {
-            urls: 'ip',
+            urls: 'turn:ip?transport=udp',
             username: 'user',
             credential: 'password'
         },
         {
-            urls: 'turn:ip:3478?transport=tcp', 
-            username: 'user', 
-            credential: 'password'  
+            urls: 'turn:ip:3478?transport=tcp',
+            username: 'user',
+            credential: 'password'
             // credentialAlgorithm: 'SHA-1' // Добавьте, если в конфиге coturn указан fingerprint
         }
     ]
@@ -350,7 +350,7 @@ function createPeerConnection(targetUser) {
         localStream.getTracks().forEach(track => {
             // Добавляем только активные треки
             if (track.enabled) {
-                 pc.addTrack(track, localStream);
+                pc.addTrack(track, localStream);
             }
         });
     } else {
@@ -372,10 +372,10 @@ function createPeerConnection(targetUser) {
         }
     };
     pc.oniceconnectionstatechange = (event) => {
-    console.log(`Состояние ICE-соединения с ${targetUser} изменилось:`, pc.iceConnectionState);
-    // Если pc.iceConnectionState === 'failed', это означает, что WebRTC не смог
-    // установить соединение через ICE (не смог передать данные через найденный маршрут).
-    // Это и есть основная причина, почему видео/аудио не работает, несмотря на ontrack.
+        console.log(`Состояние ICE-соединения с ${targetUser} изменилось:`, pc.iceConnectionState);
+        // Если pc.iceConnectionState === 'failed', это означает, что WebRTC не смог
+        // установить соединение через ICE (не смог передать данные через найденный маршрут).
+        // Это и есть основная причина, почему видео/аудио не работает, несмотря на ontrack.
     };
 
     peerConnections[targetUser] = pc;
@@ -450,9 +450,19 @@ function sendOffer(targetUser) {
         .catch(e => console.error('Ошибка создания offer:', e, e.name, e.message));
 }
 
+// В script.js, ПЕРЕПИШИТЕ обработчик offer:
 socket.on('offer', async (data) => {
-    console.log('Получен offer от:', data.username, data);
-    const senderUser = data.username;
+    const senderUser = data.username; // Кто отправил offer
+    const targetUser = data.target;   // Кому отправлен offer
+
+    // --- НОВОЕ: ПРОВЕРКА ЦЕЛИ ---
+    if (targetUser !== username) {
+        console.log(`Получен offer от ${senderUser} для ${targetUser}, но я - ${username}. Игнорирую.`);
+        return; // Выходим, если offer не для меня
+    }
+    // --- КОНЕЦ НОВОГО ---
+
+    console.log('Получен offer от:', senderUser, data);
 
     if (!peerConnections[senderUser]) {
         console.log(`Соединение с ${senderUser} не существует, создаём его при получении offer.`);
@@ -462,7 +472,13 @@ socket.on('offer', async (data) => {
     const pc = peerConnections[senderUser];
     if (!pc) {
         console.error(`Не удалось создать/найти соединение с ${senderUser} для offer`);
-        offerCreationInProgress[senderUser] = false; // Сбрасываем флаг, если соединения нет
+        offerCreationInProgress[senderUser] = false;
+        return;
+    }
+
+    // Проверяем состояние перед setRemoteDescription
+    if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+        console.warn(`Состояние соединения с ${senderUser} не позволяет установить remote offer: ${pc.signalingState}`);
         return;
     }
 
@@ -476,7 +492,7 @@ socket.on('offer', async (data) => {
             answer: answer,
             room: roomID,
             username: username,
-            target: senderUser
+            target: senderUser // Кому отправляем ответ (т.е. отправителю offer)
         });
 
         // После установки remoteDescription, добавляем отложенные кандидаты
@@ -486,22 +502,39 @@ socket.on('offer', async (data) => {
             for (const candidate of pendingCandidates) {
                 await pc.addIceCandidate(candidate);
             }
-            // Очищаем очередь
-            iceCandidateQueues[senderUser] = [];
+            iceCandidateQueues[senderUser] = []; // Очищаем очередь
         }
     } catch (e) {
         console.error('Ошибка обработки offer:', e, e.name, e.message);
-        // В случае ошибки, сбрасываем флаг offer, чтобы можно было попробовать снова
         offerCreationInProgress[senderUser] = false;
     }
 });
+// --- КОНЕЦ ОБНОВЛЁННОГО ОБРАБОТЧИКА offer ---
 
+// --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК answer ---
 socket.on('answer', async (data) => {
-    console.log('Получен answer от:', data.username, data);
-    const senderUser = data.username;
+    const senderUser = data.username; // Кто отправил answer
+    const targetUser = data.target;   // Кому отправлен answer
+
+    // --- НОВОЕ: ПРОВЕРКА ЦЕЛИ ---
+    if (targetUser !== username) {
+        console.log(`Получен answer от ${senderUser} для ${targetUser}, но я - ${username}. Игнорирую.`);
+        return; // Выходим, если answer не для меня
+    }
+    // --- КОНЕЦ НОВОГО ---
+
+    console.log('Получен answer от:', senderUser, data);
     const pc = peerConnections[senderUser];
 
     if (pc) {
+        // Проверяем состояние перед setRemoteDescription
+        if (pc.signalingState !== 'have-remote-offer') {
+            console.warn(`Состояние соединения с ${senderUser} не позволяет установить remote answer: ${pc.signalingState}`);
+            // Сбрасываем флаг, если была ошибка при обработке ответа
+            offerCreationInProgress[senderUser] = false;
+            return;
+        }
+
         try {
             await pc.setRemoteDescription(data.answer);
             console.log(`Установлен remote description для ${senderUser} (answer)`);
@@ -512,12 +545,11 @@ socket.on('answer', async (data) => {
                 for (const candidate of pendingCandidates) {
                     await pc.addIceCandidate(candidate);
                 }
-                // Очищаем очередь
-                iceCandidateQueues[senderUser] = [];
+                iceCandidateQueues[senderUser] = []; // Очищаем очередь
             }
         } catch (e) {
             console.error('Ошибка обработки answer:', e, e.name, e.message);
-            // Сбрасываем флаг offer, если была ошибка при обработке ответа
+            // Сбрасываем флаг, если была ошибка при обработке ответа
             offerCreationInProgress[senderUser] = false;
         }
     } else {
@@ -526,10 +558,21 @@ socket.on('answer', async (data) => {
         offerCreationInProgress[senderUser] = false;
     }
 });
+// --- КОНЕЦ ОБНОВЛЁННОГО ОБРАБОТЧИКА answer ---
 
+// --- ОБНОВЛЁННЫЙ ОБРАБОТЧИК candidate ---
 socket.on('candidate', async (data) => {
-    console.log('Получен candidate от:', data.username, data);
-    const senderUser = data.username;
+    const senderUser = data.username; // Кто отправил candidate
+    const targetUser = data.target;   // Кому отправлен candidate
+
+    // --- НОВОЕ: ПРОВЕРКА ЦЕЛИ ---
+    if (targetUser !== username) {
+        console.log(`Получен candidate от ${senderUser} для ${targetUser}, но я - ${username}. Игнорирую.`);
+        return; // Выходим, если candidate не для меня
+    }
+    // --- КОНЕЦ НОВОГО ---
+
+    console.log('Получен candidate от:', senderUser, data);
     const pc = peerConnections[senderUser];
 
     if (pc && data.candidate) {
@@ -541,6 +584,7 @@ socket.on('candidate', async (data) => {
                 console.error('Ошибка добавления ICE-кандидата:', e, e.name, e.message);
             }
         } else {
+            // remoteDescription ещё не установлен, добавляем в очередь
             console.log(`remoteDescription для ${senderUser} ещё не установлен, добавляем кандидат в очередь`);
             iceCandidateQueues[senderUser]?.push(data.candidate);
         }
@@ -548,6 +592,7 @@ socket.on('candidate', async (data) => {
         console.warn(`Соединение с ${senderUser} не найдено для candidate или candidate пуст.`, pc, data.candidate);
     }
 });
+// --- КОНЕЦ ОБНОВЛЁННОГО ОБРАБОТЧИКА candidate ---
 
 screenBtn.onclick = async () => {
     try {

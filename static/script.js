@@ -261,6 +261,7 @@ startBtn.onclick = async () => {
 
 // Создание WebRTC-соединения
 function createPeerConnection(targetUser) {
+    // Проверяем, не существует ли уже соединения
     if (peerConnections[targetUser]) {
         console.log(`Соединение с ${targetUser} уже существует.`, peerConnections[targetUser].signalingState, peerConnections[targetUser].iceConnectionState);
         return;
@@ -268,6 +269,11 @@ function createPeerConnection(targetUser) {
 
     console.log(`Создаём соединение с ${targetUser}`);
     const pc = new RTCPeerConnection(config);
+
+    // --- НОВОЕ: Объявляем переменную для отслеживания привязанных потоков ---
+    // Она будет уникальна для каждого экземпляра RTCPeerConnection
+    const attachedStreams = new Set();
+    // --- КОНЕЦ НОВОГО ---
 
     // Инициализируем очередь ICE-кандидатов и флаг offer для этого пользователя
     iceCandidateQueues[targetUser] = [];
@@ -287,6 +293,7 @@ function createPeerConnection(targetUser) {
         }
     };
 
+    // --- ОБНОВЛЁННЫЙ ontrack ---
     pc.ontrack = (event) => {
         const stream = event.streams[0];
         console.log(`Получен трек от ${targetUser}, поток:`, stream);
@@ -324,6 +331,7 @@ function createPeerConnection(targetUser) {
             // - NotAllowedError: если автовоспроизведение заблокировано (редко для ontrack, но возможно)
         });
     };
+    // --- КОНЕЦ ОБНОВЛЁННОГО ontrack ---
 
     if (localStream) { // <-- ВАЖНО: проверяем, что localStream существует
         console.log(`Добавляем локальный поток к соединению с ${targetUser}`);

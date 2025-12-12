@@ -8,7 +8,8 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Хранение информации о комнатах в памяти (в реальных приложениях используй базу данных)
 rooms = {}
-
+socket_to_room = {}
+user_sid_map = {} 
 
 @app.route("/")
 def index():
@@ -62,12 +63,9 @@ def on_join(data):
     """
     room_id = data["room"]
     username = data.get("username", "Аноним")
-    join_room(room_id)
 
     # Проверяем, не вошёл ли уже такой пользователь (защита от дубликатов при обновлении)
-    existing_user = next(
-        (u for u in rooms[room_id]["users"] if u["username"] == username), None
-    )
+    existing_user = next((u for u in rooms[room_id]["users"] if u["username"] == username), None)
     if existing_user:
         # Если пользователь уже есть, обновляем его данные
         # Не переназначаем модератора
@@ -92,7 +90,10 @@ def on_join(data):
         if not rooms[room_id]["moderator"]:
             rooms[room_id]["moderator"] = username
             rooms[room_id]["users"][-1]["is_moderator"] = True
-
+    
+    socket_to_room[request.sid] = room_id
+    user_sid_map[request.sid] = username
+    join_room(room_id)
     # Отправляем обновлённый список пользователей и историю чата всем в комнате
     emit(
         "user_joined",
@@ -281,6 +282,7 @@ def on_leave(data):
     """
     room_id = data["room"]
     username = data.get("username", "Аноним")
+
     leave_room(room_id)
 
     if room_id in rooms:
@@ -306,6 +308,69 @@ def on_leave(data):
             },
             room=room_id,
         )
+
+    # --- НОВОЕ: Удаляем связь socket -> room ---
+    if request.sid in socket_to_room:
+        del socket_to_room[request.sid]
+    if request.sid in user_sid_map:
+        del user_sid_map[request.sid]
+    # --- КОНЕЦ НОВОГО ---
+
+# --- НОВОЕ: Обработчик отключения ---
+@socketio.on('disconnect')
+def on_disconnect():
+    """
+    Обработка отключения пользователя (например, закрытие вкладки).
+    """
+    sid = request.sid
+    print(f"Сокет {sid} отключился.")
+
+    # Проверяем, есть ли связь SID -> Username (означает, что пользователь вошёл в комнату)
+    if sid in user_sid_map:
+        username = user_sid_map[sid]
+        room_id = socket_to_room.get(sid) # Получаем комнату из другой карты
+
+        if room_id and room_id in rooms:
+            print(f"Пользователь {username} (SID: {sid}) отключился от комнаты {room_id}.")
+
+            # Удаляем пользователя из списка участников комнаты
+            rooms[room_id]["users"] = [
+                u for u in rooms[room_id]["users"] if u["username"] != username
+            ]
+
+            # Уведомляем других участников об уходе
+            emit(
+                "user_left",
+                {
+                    "username": username,
+                    "users": [
+                        {
+                            "username": u["username"],
+                            "is_moderator": u["is_moderator"],
+                            "audio_enabled": u["audio_enabled"],
+                            "video_enabled": u["video_enabled"],
+                            "screen_shared": u["screen_shared"],
+                        }
+                        for u in rooms[room_id]["users"]
+                    ],
+                },
+                room=room_id,
+                # skip_sid=sid # Не отправляем отключившемуся (он уже отключен)
+            )
+
+        else:
+            print(f"Пользователь {username} (SID: {sid}) отключился, но комната не найдена в rooms.")
+
+        # Удаляем связи из обеих карт
+        del user_sid_map[sid]
+        if sid in socket_to_room:
+            del socket_to_room[sid]
+
+        print(f"Отключение обработано для пользователя {username} (SID: {sid}).")
+
+    else:
+        print(f"Сокет {sid} отключился, но не был привязан к пользователю (возможно, не вошёл в комнату).")
+# --- КОНЕЦ НОВОГО ОБРАБОТЧИКА ---
 
 
 if __name__ == "__main__":

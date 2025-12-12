@@ -186,12 +186,12 @@ p {
     margin-left: 5px;
 }
 
-.video-mirror {
+/* .video-mirror {
     transform: scaleX(-1);
 }
 #local-video {
     transform: scaleX(-1);
-}
+} */
 
 /* Модальное окно */
 .modal {

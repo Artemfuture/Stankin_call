@@ -211,10 +211,20 @@ function resetPresenceTimer() {
 document.getElementById('confirmPresence').addEventListener('click', resetPresenceTimer);
 resetPresenceTimer();
 
-function copyRoomId() {
-    const roomIdText = document.getElementById('roomId').textContent;
-    navigator.clipboard.writeText(roomIdText).then(() => {
-        alert('ID комнаты скопирован: ' + roomIdText);
+function copyRoomLink() {
+    // Получаем ID комнаты из span
+    const roomId = document.getElementById('roomId').textContent;
+    // Формируем полную ссылку
+    const roomLink = `https://stankincalls.ru/join_form/${roomId}`;
+    // Копируем ссылку в буфер обмена
+    navigator.clipboard.writeText(roomLink).then(() => {
+        // Показываем уведомление об успехе
+        alert('Ссылка на комнату скопирована: ' + roomLink);
+    }).catch(err => {
+        // Обработка ошибки (например, если Clipboard API не поддерживается)
+        console.error('Не удалось скопировать ссылку: ', err);
+        // Альтернативный способ (например, показать ссылку в модальном окне)
+        prompt("Скопируйте ссылку:", roomLink);
     });
 }
 
@@ -234,7 +244,7 @@ startBtn.onclick = async () => {
         }
         // localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
-        localVideo.classList.add('video-mirror');
+        // localVideo.classList.add('video-mirror');
         startBtn.textContent = 'Завершить трансляцию';
         isStreaming = true;
         screenBtn.disabled = false;
@@ -340,7 +350,7 @@ function createPeerConnection(targetUser) {
             video.playsInline = true;
             // video.muted = true; // <-- РАССМОТРИТЕ возможность добавления muted для автовоспроизведения
             video.classList.add('video-item');
-            video.classList.add('remote-video-mirror');
+            // video.classList.add('remote-video-mirror');
             remoteVideos.appendChild(video);
         } else {
             console.log(`Обновляем srcObject существующего элемента video для ${targetUser}`);

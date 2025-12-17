@@ -1,16 +1,25 @@
-FROM python:3.12.3
+FROM python:3.12.3-slim  # Используем slim для меньшего размера
 
 WORKDIR /app
+
+# Устанавливаем системные зависимости для некоторых Python пакетов
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Копируем остальные файлы
 COPY . .
 
-# Указываем, что приложение будет слушать на порту 5000
+# Указываем порт
 EXPOSE 5000
 
-# Команда для запуска приложения
-# Используем eventlet для лучшей производительности с SocketIO
-# CMD ["python", "-m", "eventlet.wsgi", "-k", "eventlet", "-b", "0.0.0.0:5000", "app.py"]
+# Устанавливаем переменные окружения
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=app.py
+
+# Команда для запуска
 CMD ["python", "app.py"]

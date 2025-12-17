@@ -1,33 +1,632 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <title>Регистрация</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в комнату — StankinCalls</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/png">
+    <style>
+        /* СТИЛИ КАК НА ГЛАВНОЙ СТРАНИЦЕ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        [data-theme="light"] body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        [data-theme="dark"] body {
+            background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 0 10px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-image-wrapper {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .logo-fallback {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .logo-text {
+            font-size: 28px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .logo-accent {
+            color: #fbbf24;
+        }
+
+        [data-theme="dark"] .logo-text {
+            color: #e2e8f0;
+        }
+
+        .theme-btn {
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            min-width: 140px;
+            justify-content: center;
+        }
+
+        .theme-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+        }
+
+        [data-theme="dark"] .theme-btn {
+            background: rgba(0, 0, 0, 0.2);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .theme-icon {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2;
+        }
+
+        .sun-icon {
+            display: block;
+        }
+
+        .moon-icon {
+            display: none;
+        }
+
+        [data-theme="dark"] .sun-icon {
+            display: none;
+        }
+
+        [data-theme="dark"] .moon-icon {
+            display: block;
+        }
+
+        .theme-label {
+            font-size: 14px;
+        }
+
+        .main-content {
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        [data-theme="dark"] .card {
+            background: #2d3748;
+            color: #e2e8f0;
+        }
+
+        .card h2 {
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        [data-theme="dark"] .card h2 {
+            color: #e2e8f0;
+        }
+
+        .room-info {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 30px;
+            text-align: left;
+        }
+
+        [data-theme="dark"] .room-info {
+            background: #4a5568;
+        }
+
+        .room-id-label {
+            font-size: 14px;
+            color: #718096;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        [data-theme="dark"] .room-id-label {
+            color: #cbd5e0;
+        }
+
+        .room-id-display {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .room-id-code {
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            letter-spacing: 1px;
+        }
+
+        [data-theme="dark"] .room-id-code {
+            color: #e2e8f0;
+        }
+
+        .copy-btn {
+            background: #e2e8f0;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 14px;
+            color: #4a5568;
+            transition: all 0.3s ease;
+        }
+
+        .copy-btn:hover {
+            background: #cbd5e0;
+            transform: translateY(-1px);
+        }
+
+        [data-theme="dark"] .copy-btn {
+            background: #718096;
+            color: #e2e8f0;
+        }
+
+        [data-theme="dark"] .copy-btn:hover {
+            background: #5a6578;
+        }
+
+        .copy-icon {
+            width: 16px;
+            height: 16px;
+            stroke-width: 2;
+        }
+
+        .copy-feedback {
+            font-size: 12px;
+            color: #38a169;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            text-align: right;
+        }
+
+        .join-form {
+            margin-bottom: 25px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #4a5568;
+            font-size: 14px;
+        }
+
+        [data-theme="dark"] .input-label {
+            color: #e2e8f0;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 16px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        [data-theme="dark"] .input-field {
+            background: #4a5568;
+            border-color: #718096;
+            color: #e2e8f0;
+        }
+
+        [data-theme="dark"] .input-field:focus {
+            border-color: #90cdf4;
+        }
+
+        .input-hint {
+            font-size: 13px;
+            color: #718096;
+            margin-top: 5px;
+            display: block;
+        }
+
+        [data-theme="dark"] .input-hint {
+            color: #a0aec0;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 16px 24px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-icon {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: white;
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        [data-theme="dark"] .footer {
+            color: #cbd5e0;
+        }
+
+        .alert {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #f56565;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            z-index: 1000;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from { top: -100px; opacity: 0; }
+            to { top: 20px; opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { top: 20px; opacity: 1; }
+            to { top: -100px; opacity: 0; }
+        }
+
+        @media (max-width: 600px) {
+            .card {
+                padding: 30px 20px;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
+            
+            .logo-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .logo-text {
+                font-size: 24px;
+            }
+            
+            .theme-btn {
+                min-width: 120px;
+            }
+            
+            .room-id-display {
+                flex-direction: column;
+                gap: 10px;
+                align-items: flex-start;
+            }
+            
+            .copy-btn {
+                align-self: flex-end;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- Заголовок формы -->
-    <h1>Добро пожаловать! Пожалуйста, введите ваше ФИО</h1>
+    <div class="container">
+        <header class="header">
+            <div class="logo-container">
+                <div class="logo-image-wrapper">
+                    <img 
+                        src="{{ url_for('static', filename='stankin.png') }}" 
+                        alt="StankinCalls" 
+                        class="logo-image"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="logo-fallback" style="display: none;">ST</div>
+                </div>
+                <h1 class="logo-text">Stankin<span class="logo-accent">Calls</span></h1>
+            </div>
 
-    <!-- Форма ввода ФИО -->
-    <form id="joinForm">
-        <input type="text" id="fullName" placeholder="Фамилия Имя Отчество" required>
-        <input type="hidden" id="roomId" value="{{ room_id }}">
-        <button type="submit">Войти в комнату</button>
-    </form>
+            <button id="theme-toggle" class="theme-btn" aria-label="Сменить тему">
+                <svg class="theme-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="theme-icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                </svg>
+                <span class="theme-label">Тёмная тема</span>
+            </button>
+        </header>
+
+        <main class="main-content">
+            <div class="card">
+                <h2>Вход в учебную комнату</h2>
+                
+                <div class="room-info">
+                    <label class="room-id-label">ID комнаты:</label>
+                    <div class="room-id-display">
+                        <code id="roomIdDisplay" class="room-id-code">{{ room_id }}</code>
+                        <button id="copyRoomIdBtn" class="copy-btn" title="Скопировать ID комнаты">
+                            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                            </svg>
+                            Копировать
+                        </button>
+                    </div>
+                    <div id="copyFeedback" class="copy-feedback">✅ ID скопирован в буфер обмена</div>
+                </div>
+
+                <form id="joinForm" class="join-form">
+                    <div class="input-group">
+                        <label for="fullName" class="input-label">Фамилия Имя Отчество и группа</label>
+                        <input 
+                            type="text" 
+                            id="fullName" 
+                            name="fullName"
+                            placeholder="Например: Иванов И.И., ИДБ-24-15"
+                            autocomplete="name"
+                            required
+                            class="input-field"
+                            autofocus
+                        >
+                        <span class="input-hint">Эта информация будет видна преподавателю и другим участникам</span>
+                    </div>
+
+                    <input type="hidden" id="roomId" name="roomId" value="{{ room_id }}">
+
+                    <button type="submit" class="btn btn-primary">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" stroke-linecap="round"/>
+                            <path d="M15 3h6v6"/>
+                            <path d="M10 14L21 3" stroke-linecap="round"/>
+                        </svg>
+                        Присоединиться к занятию
+                    </button>
+                </form>
+                
+                <div style="text-align: left; font-size: 14px; color: #718096; margin-top: 20px;">
+                    <p>🎓 <strong>Для студентов МГТУ им. Станкина:</strong></p>
+                    <ul style="padding-left: 20px; margin-top: 10px;">
+                        <li>Укажите свои настоящие ФИО и учебную группу</li>
+                        <li>Используйте веб-камеру и микрофон для участия</li>
+                        <li>Занятие начнётся после подключения преподавателя</li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>© 2025 StankinCalls — платформа учебных видеоконференций МГТУ им. Станкина</p>
+        </footer>
+    </div>
 
     <script>
-        // Обработка отправки формы
-        document.getElementById('joinForm').onsubmit = function(e) {
-            e.preventDefault(); // Предотвращаем стандартное поведение формы
-            const fullName = document.getElementById('fullName').value.trim(); // Получаем введённое ФИО
-            const roomId = document.getElementById('roomId').value; // Получаем ID комнаты
-
-            if (fullName) {
-                // Перенаправляем пользователя в комнату с его ФИО в URL
-                window.location.href = `/room/${roomId}?username=${encodeURIComponent(fullName)}`;
+        // === КОПИРОВАНИЕ ID КОМНАТЫ ===
+        document.getElementById('copyRoomIdBtn').addEventListener('click', async function() {
+            const roomId = document.getElementById('roomIdDisplay').textContent;
+            try {
+                await navigator.clipboard.writeText(roomId);
+                
+                // Показать уведомление об успешном копировании
+                const feedback = document.getElementById('copyFeedback');
+                feedback.style.opacity = '1';
+                
+                // Временно изменить текст кнопки
+                const originalText = this.innerHTML;
+                this.innerHTML = '<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Скопировано!';
+                this.disabled = true;
+                
+                setTimeout(() => {
+                    feedback.style.opacity = '0';
+                    this.innerHTML = originalText;
+                    this.disabled = false;
+                }, 2000);
+            } catch (err) {
+                showAlert('Не удалось скопировать ID. Скопируйте вручную: ' + roomId);
             }
-        };
+        });
+
+        // === ОТПРАВКА ФОРМЫ ===
+        document.getElementById('joinForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const fullName = document.getElementById('fullName').value.trim();
+            const roomId = document.getElementById('roomId').value;
+
+            if (!fullName) {
+                showAlert('⚠️ Пожалуйста, укажите ваши ФИО и учебную группу');
+                document.getElementById('fullName').focus();
+                return;
+            }
+
+            // Проверка минимальной длины (хотя бы 2 символа)
+            if (fullName.length < 2) {
+                showAlert('⚠️ ФИО должно содержать хотя бы 2 символа');
+                return;
+            }
+
+            // Кодируем и перенаправляем
+            const encodedName = encodeURIComponent(fullName);
+            window.location.href = `/room/${roomId}?username=${encodedName}`;
+        });
+
+        // Обработка Enter в поле ввода
+        document.getElementById('fullName').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('joinForm').dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // Функция показа уведомлений
+        function showAlert(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert';
+            alertDiv.textContent = message;
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.style.animation = 'slideUp 0.3s ease';
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        document.body.removeChild(alertDiv);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // === СМЕНА ТЕМЫ ===
+        const themeToggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+
+        function setTheme(theme) {
+            html.setAttribute('data-theme', theme);
+            localStorage.setItem('stankincalls-theme', theme);
+            updateThemeUI();
+        }
+
+        function updateThemeUI() {
+            const current = html.getAttribute('data-theme');
+            const label = themeToggle.querySelector('.theme-label');
+            
+            if (current === 'dark') {
+                label.textContent = 'Светлая тема';
+            } else {
+                label.textContent = 'Тёмная тема';
+            }
+        }
+
+        // Инициализация темы
+        const savedTheme = localStorage.getItem('stankincalls-theme') || 'light';
+        setTheme(savedTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const current = html.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            setTheme(next);
+        });
+
+        // Автофокус на поле ввода
+        document.addEventListener('DOMContentLoaded', function() {
+            const input = document.getElementById('fullName');
+            if (input) {
+                setTimeout(() => input.focus(), 100);
+            }
+        });
     </script>
 </body>
 </html>

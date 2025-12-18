@@ -1,6 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import secrets
+import hmac
+import hashlib
+import base64
+import time
+
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "your-secret-key"
@@ -17,6 +22,30 @@ def index():
     Главная страница — позволяет создать новую комнату или войти в существующую.
     """
     return render_template("index.html")
+
+@app.route("/turn-credentials")
+def turn_credentials():
+    TURN_SECRET = "SECRET"  # тот же, что static-auth-secret
+    TURN_TTL = 3600  # 1 час
+
+    username = f"{int(time.time()) + TURN_TTL}:stankincalls"
+
+    digest = hmac.new(
+        TURN_SECRET.encode(),
+        username.encode(),
+        hashlib.sha1
+    ).digest()
+
+    credential = base64.b64encode(digest).decode()
+
+    return {
+        "urls": [
+            "turns:stankincalls.ru:5349",
+            "turn:stankincalls.ru:3478"
+        ],
+        "username": username,
+        "credential": credential
+    }
 
 
 @app.route("/create_room", methods=["POST"])

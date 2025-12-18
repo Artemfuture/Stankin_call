@@ -13,26 +13,13 @@ let isScreenShared = false;
 let audioEnabled = true;
 let videoEnabled = true;
 let isStreaming = false;
+const turn = await fetch('/turn-credentials').then(r => r.json());
 const config = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302'},
-        { urls: 'stun:stun1.l.google.com:19302'},
-        {
-            urls: 'turn:ip:3478?transport=udp',
-            username: 'user',
-            credential: 'password'
-        },
-        {
-            urls: 'turn:ip:3478?transport=tcp',
-            username: 'user',
-            credential: 'password'
-            // credentialAlgorithm: 'SHA-1' // Добавьте, если в конфиге coturn указан fingerprint
-        }
-    ],
-    iceCandidatePoolSize: 10,
-    iceTransportPolicy: 'all'
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    turn
+  ]
 };
-
 const localVideo = document.getElementById('local-video');
 const remoteVideos = document.getElementById('remote-videos');
 const messageInput = document.getElementById('message-input');

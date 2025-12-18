@@ -1,14 +1,10 @@
+version: '3.8'
+
 services:
   web:
     build: .
     container_name: video_chat_web
-    expose:
-      - "5000"
-    environment:
-      - FLASK_ENV=production
-    networks:
-      - app-network
-    restart: unless-stopped
+    # ... (остальные настройки web)
 
   nginx:
     image: nginx:alpine
@@ -17,14 +13,12 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro  # Монтируем SSL сертификаты
+      - ./nginx.conf:/etc/nginx/nginx.conf # Путь к вашему файлу конфигурации
+      # --- НОВОЕ: Монтируем сертификаты ---
+      - /etc/letsencrypt:/etc/letsencrypt:ro # Монтируем папку с сертификатами (только чтение)
+      # --- КОНЕЦ НОВОГО ---
     depends_on:
       - web
-    networks:
-      - app-network
     restart: unless-stopped
 
-networks:
-  app-network:
-    driver: bridge
+# ... (networks и т.д.)

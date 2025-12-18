@@ -23,16 +23,15 @@ def index():
 @app.route("/create_room", methods=["POST"])
 def create_room():
     """
-    Создаёт уникальную комнату и сразу перенаправляет на регистрацию.
+    Создаёт уникальную комнату с ID и возвращает ссылку на страницу регистрации.
     """
-    room_id = secrets.token_hex(4)  # 8 символов: например, a1b2c3d4
-    rooms[room_id] = {
-        "users": [],
-        "moderator": None,
-        "messages": []
-    }
-    # ✅ Автоматический редирект — никакой промежуточной страницы
-    return redirect(url_for('join_form', room_id=room_id))
+    room_id = secrets.token_hex(
+        4
+    )  # Генерация уникального ID (8 шестнадцатеричных символов)
+    # Инициализация комнаты: список участников, модератор и история чата
+    rooms[room_id] = {"users": [], "moderator": None, "messages": []}
+    # Перенаправляем на страницу регистрации, а не в комнату
+    return f'<a href="/join_form/{room_id}">Войти в комнату {room_id}</a>'
 
 
 @app.route("/room/<room_id>")

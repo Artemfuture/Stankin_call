@@ -2,7 +2,10 @@
 const urlParams = new URLSearchParams(window.location.search);
 const username = urlParams.get('username') || 'Аноним';
 const roomID = document.getElementById('roomId').textContent;
-const socket = io('https://stankincalls.ru');
+const socket = io({
+  transports: ['websocket', 'polling'],
+  secure: true
+});
 // const socket = io('http://localhost:5000'); //test
 
 let localStream;
